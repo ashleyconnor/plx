@@ -46,7 +46,8 @@ change, what gets skipped and why. Changes are logged to
 
 ```
 alien                       title contains "alien"
-size>4G  dur<30m            comparisons (sizes K M G T, durations m h d)
+size>4G  dur<30m  plays>1   comparisons (sizes K M G T, durations m h d);
+                            size:>4G works too
 label:keep label:fav        both labels
 label:keep,fav              either label
 -label:trash                negate any term

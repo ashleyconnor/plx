@@ -551,12 +551,22 @@ func tokenize(s string) ([]token, error) {
 
 var opRe = regexp.MustCompile(`^([A-Za-z_]+)(:|!=|>=|<=|=|>|<)(.*)$`)
 
+// splitOp splits "size>4G" into name, operator and value. GitHub-style
+// "size:>4G" is accepted as the same thing.
 func splitOp(s string) (name, op, val string, ok bool) {
 	m := opRe.FindStringSubmatch(s)
 	if m == nil {
 		return "", "", "", false
 	}
-	return m[1], m[2], m[3], true
+	name, op, val = m[1], m[2], m[3]
+	if op == ":" {
+		for _, o := range []string{">=", "<=", "!=", ">", "<", "="} {
+			if strings.HasPrefix(val, o) {
+				return name, o, val[len(o):], true
+			}
+		}
+	}
+	return name, op, val, true
 }
 
 // splitValues splits on commas outside quotes and strips the quotes.
