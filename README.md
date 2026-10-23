@@ -50,11 +50,21 @@ size>4G  dur<30m            comparisons (sizes K M G T, durations m h d)
 label:keep label:fav        both labels
 label:keep,fav              either label
 -label:trash                negate any term
+has:label  -has:label       has any label / has none
+labelcount:1 label:keep     keep is the only label
 is:watched  -is:watched     yes/no fields
 path:/tv/anime/             substring at any depth; path:/tv/*/S01/* glob
 added<30d  viewed>1y        relative ages; added>2024-01-01 absolute dates
 sort:size-,title            sort, - for descending
 ```
+
+While typing a filter, `tab` completes field names, `is:`/`has:` targets,
+sort fields and values such as labels, genres and resolutions (taken from the
+list you're filtering, most common first); `↑`/`↓` choose a suggestion.
+
+`enter` (or `i`) on an item opens its details: full metadata, every media
+version with files, audio and subtitle streams, and the poster drawn with
+half-block characters, which works in any 256-colour or true-colour terminal.
 
 ## Saved queries
 

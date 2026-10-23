@@ -33,6 +33,7 @@ const (
 	modePreview
 	modeRunning
 	modeHelp
+	modeInfo
 )
 
 type Model struct {
@@ -54,9 +55,14 @@ type Model struct {
 	statusAt  time.Time
 
 	menu    *menu
-	picker  *picker
-	prompt  *prompt
-	preview *plan.Plan
+	info    *info
+	comp    completion // filter autocomplete
+	compSel int        // highlighted suggestion; -1 until ↑/↓ is used
+
+	helpScroll int
+	picker     *picker
+	prompt     *prompt
+	preview    *plan.Plan
 
 	progress exec.Progress
 	progCh   chan tea.Msg
@@ -191,6 +197,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitFor(m.progCh)
 	case execDoneMsg:
 		return m, m.finished(msg)
+	case infoMsg:
+		if m.info == nil || m.info.item.Key != msg.key {
+			return m, nil
+		}
+		m.info.meta, m.info.err = msg.meta, msg.err
+		if msg.meta != nil {
+			return m, m.loadPoster(msg.meta)
+		}
+		return m, m.loadPoster(m.info.item.Raw) // listing has the thumb too
+	case posterMsg:
+		if m.info != nil && m.info.item.Key == msg.key {
+			m.info.poster, m.info.posterDone = msg.art, true
+		}
+		return m, nil
 	case statusMsg:
 		m.mode = modeNormal
 		m.setStatus(msg.text, msg.err)
@@ -221,8 +241,9 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 	case modeRunning:
 		return nil
 	case modeHelp:
-		m.mode = modeNormal
-		return nil
+		return m.helpKey(msg)
+	case modeInfo:
+		return m.infoKey(msg)
 	}
 	return m.normalKey(msg)
 }
@@ -260,7 +281,12 @@ func (m *Model) normalKey(msg tea.KeyMsg) tea.Cmd {
 		m.input.CursorEnd()
 		m.input.Focus()
 		m.mode = modeFilter
+		m.updateCompletion()
 		return textinput.Blink
+	case "i":
+		if r, ok := v.current(); ok && r.item != nil {
+			return m.openInfo(r.item)
+		}
 	case "esc":
 		if v.filterText != "" {
 			v.setFilter("")
@@ -314,6 +340,8 @@ func (m *Model) open() tea.Cmd {
 	case r.isFolder():
 		v.folder, v.cursor = r.folder, 0
 		v.rebuild()
+	case r.item != nil:
+		return m.openInfo(r.item)
 	}
 	return nil
 }
@@ -350,14 +378,40 @@ func (m *Model) refresh() tea.Cmd {
 	return m.load(v)
 }
 
+// Filter keys: tab completes the highlighted suggestion, ↑/↓ choose one
+// (then enter also accepts it), enter applies the filter, esc reverts.
 func (m *Model) filterKey(msg tea.KeyMsg) tea.Cmd {
 	v := m.top()
+	n := len(m.comp.sugs)
 	switch msg.String() {
+	case "tab":
+		if n > 0 {
+			m.acceptCompletion(max(m.compSel, 0))
+		}
+		return nil
+	case "down", "ctrl+n":
+		if n > 0 {
+			m.compSel = (m.compSel + 1) % n
+		}
+		return nil
+	case "up", "ctrl+p":
+		if n > 0 {
+			m.compSel = (m.compSel - 1 + n) % n
+		}
+		return nil
 	case "enter":
+		if m.compSel >= 0 && n > 0 {
+			m.acceptCompletion(m.compSel)
+			return nil
+		}
 		m.mode = modeNormal
 		m.input.Blur()
 		return nil
 	case "esc":
+		if m.compSel >= 0 {
+			m.compSel = -1
+			return nil
+		}
 		m.mode = modeNormal
 		m.input.Blur()
 		v.setFilter(m.inputPrev)
@@ -366,7 +420,29 @@ func (m *Model) filterKey(msg tea.KeyMsg) tea.Cmd {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	v.setFilter(m.input.Value())
+	m.updateCompletion()
 	return cmd
+}
+
+func (m *Model) updateCompletion() {
+	v := m.top()
+	if v.kind != itemView {
+		m.comp = completion{}
+		return
+	}
+	val := m.input.Value()
+	m.comp = complete(val[:min(m.input.Position(), len(val))], v.items)
+	m.compSel = -1
+}
+
+func (m *Model) acceptCompletion(i int) {
+	val := m.input.Value()
+	pos := min(m.input.Position(), len(val))
+	head := val[:m.comp.start] + m.comp.sugs[i].insert
+	m.input.SetValue(head + val[pos:])
+	m.input.SetCursor(len(head))
+	m.top().setFilter(m.input.Value())
+	m.updateCompletion()
 }
 
 // sortChoices are the one-key sorts; numeric fields default to descending.

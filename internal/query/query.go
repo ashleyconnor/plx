@@ -75,6 +75,9 @@ func (q *Query) addToken(tk token) error {
 		return nil
 	}
 	name, op, val, ok := splitOp(text)
+	if ok && val == "" && isKeyword(name) {
+		return nil // "label:" while still typing: ignore rather than match nothing
+	}
 	if !ok || val == "" {
 		q.Terms = append(q.Terms, wordTerm(neg, text))
 		return nil
@@ -99,6 +102,24 @@ func (q *Query) addToken(tk token) error {
 			return fmt.Errorf("is:%s: not a yes/no field (try %s)", val, boolFieldNames())
 		}
 		name, val = f.Name, "yes"
+	case "has":
+		// has:label — the item has any value for a list or text field.
+		if op != ":" {
+			return fmt.Errorf("use has:%s", val)
+		}
+		f, ok := field.Lookup(val)
+		if !ok || (f.Type != field.List && f.Type != field.String) {
+			return fmt.Errorf("has:%s: not a text or list field (try has:label)", val)
+		}
+		t := Term{Neg: neg, Field: f, Op: op, Values: []string{"*"}}
+		t.match = func(it *model.Item) bool {
+			if f.Type == field.List {
+				return len(f.List(it)) > 0
+			}
+			return f.Str(it) != ""
+		}
+		q.Terms = append(q.Terms, t)
+		return nil
 	}
 	f, ok := field.Lookup(name)
 	if !ok {
@@ -112,6 +133,15 @@ func (q *Query) addToken(tk token) error {
 	t.match = m
 	q.Terms = append(q.Terms, t)
 	return nil
+}
+
+func isKeyword(name string) bool {
+	switch strings.ToLower(name) {
+	case "is", "has", "sort":
+		return true
+	}
+	_, ok := field.Lookup(name)
+	return ok
 }
 
 func wordTerm(neg bool, w string) Term {

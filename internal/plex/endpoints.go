@@ -50,6 +50,28 @@ func (c *Client) DeleteItem(ctx context.Context, key string) error {
 	return c.doIdem(ctx, http.MethodDelete, "/library/metadata/"+key, nil, nil)
 }
 
+// Metadata fetches one item with every detail (all tags, streams, summary).
+func (c *Client) Metadata(ctx context.Context, key string) (*Metadata, error) {
+	mc, err := c.get(ctx, "/library/metadata/"+key, nil)
+	if err != nil {
+		return nil, err
+	}
+	if len(mc.Metadata) == 0 {
+		return nil, fmt.Errorf("plex: item %s not found", key)
+	}
+	return &mc.Metadata[0], nil
+}
+
+// Image fetches an artwork path (e.g. a thumb) scaled by the server to fit
+// within w×h pixels.
+func (c *Client) Image(ctx context.Context, path string, w, h int) ([]byte, error) {
+	p := Params{}.Add("width", fmt.Sprint(w)).Add("height", fmt.Sprint(h)).
+		Add("minSize", "1").Add("upscale", "1").Add("url", path)
+	var body []byte
+	err := c.doIdem(ctx, http.MethodGet, "/photo/:/transcode", p, &body)
+	return body, err
+}
+
 func (c *Client) Sections(ctx context.Context) ([]Directory, error) {
 	mc, err := c.get(ctx, "/library/sections", nil)
 	if err != nil {

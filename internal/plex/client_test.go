@@ -94,3 +94,33 @@ func TestAllowsMediaDeletion(t *testing.T) {
 		t.Fatalf("got %v, %v", ok, err)
 	}
 }
+
+func TestMetadataWithRatingList(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"MediaContainer":{"Metadata":[{"ratingKey":"1","audienceRating":7.6,"rating":6.5,
+			"Rating":[{"image":"imdb://image.rating","value":7.5}],"thumb":"/t"}]}}`))
+	}))
+	defer srv.Close()
+	md, err := New(srv.URL, "tok", Options{}).Metadata(context.Background(), "1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if md.AudienceRating != 7.6 || md.Rating != 6.5 || md.Thumb != "/t" {
+		t.Errorf("got %+v", md)
+	}
+}
+
+func TestDecodeErrorsAreNotRetried(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Write([]byte(`{"MediaContainer":{"Metadata":[{"title":["not","a","string"]}]}}`))
+	}))
+	defer srv.Close()
+	if _, err := New(srv.URL, "tok", Options{}).Metadata(context.Background(), "1"); err == nil {
+		t.Fatal("want decode error")
+	}
+	if n := calls.Load(); n != 1 {
+		t.Errorf("calls = %d, want 1", n)
+	}
+}

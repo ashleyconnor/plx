@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -117,6 +118,10 @@ func (c *Client) do(ctx context.Context, method, path string, p Params, out any)
 	if err != nil {
 		return err
 	}
+	if raw, ok := out.(*[]byte); ok {
+		*raw = body
+		return nil
+	}
 	if len(body) == 0 {
 		return nil
 	}
@@ -134,7 +139,9 @@ func (c *Client) doIdem(ctx context.Context, method, path string, p Params, out 
 	err := c.do(ctx, method, path, p, out)
 	for _, d := range retryDelays {
 		var apiErr *APIError
-		if err == nil || ctx.Err() != nil || (errors.As(err, &apiErr) && apiErr.Status < 500) {
+		var urlErr *url.Error
+		transient := (errors.As(err, &apiErr) && apiErr.Status >= 500) || errors.As(err, &urlErr)
+		if err == nil || ctx.Err() != nil || !transient {
 			return err
 		}
 		select {

@@ -38,6 +38,9 @@ func humanSize(items []*model.Item) string {
 	for _, it := range items {
 		n += it.Size
 	}
+	if n == 0 {
+		return "0B"
+	}
 	return field.HumanBytes(n)
 }
 
@@ -63,6 +66,8 @@ func (m *Model) View() string {
 		return m.overlay(m.pickerView())
 	case modePreview:
 		return m.overlay(m.previewView())
+	case modeInfo:
+		return m.overlay(m.infoView())
 	}
 	v := m.top()
 	var b strings.Builder
@@ -166,6 +171,11 @@ func colWidth(f *field.Field) int {
 func (m *Model) list(v *view) string {
 	h := m.listHeight()
 	var lines []string
+	if m.mode == modeFilter && len(m.comp.sugs) > 0 {
+		drop := m.dropdown(min(8, max(1, h/2)))
+		lines = append(lines, drop...)
+		h -= len(drop)
+	}
 	switch {
 	case v.loading:
 		lines = append(lines, "  "+m.spinner.View()+" loading…")
@@ -184,10 +194,39 @@ func (m *Model) list(v *view) string {
 			lines = append(lines, m.renderRow(v, v.rows[i], i == v.cursor))
 		}
 	}
-	for len(lines) < h {
+	for len(lines) < m.listHeight() {
 		lines = append(lines, "")
 	}
 	return strings.Join(lines, "\n") + "\n"
+}
+
+// dropdown renders filter suggestions as a box of at most n rows, scrolled
+// to keep the highlighted one visible.
+func (m *Model) dropdown(n int) []string {
+	sugs := m.comp.sugs
+	start := 0
+	if m.compSel >= n {
+		start = m.compSel - n + 1
+	}
+	w := min(70, m.w-6)
+	var rows []string
+	for i := start; i < len(sugs) && i < start+n; i++ {
+		s := sugs[i]
+		line := fit(s.label, 28) + " " + stDim.Render(fit(s.detail, w-29))
+		if i == m.compSel || (m.compSel < 0 && i == 0) {
+			line = stCursor.Render(fit(stripANSI(line), w))
+		}
+		rows = append(rows, line)
+	}
+	if len(sugs) > n {
+		rows = append(rows, stDim.Render(fmt.Sprintf("%d more…", len(sugs)-start-len(rows))))
+	}
+	box := stBox.Padding(0, 1).Render(strings.Join(rows, "\n"))
+	var out []string
+	for _, l := range strings.Split(box, "\n") {
+		out = append(out, " "+l)
+	}
+	return out
 }
 
 func (m *Model) renderRow(v *view, r row, cursor bool) string {
@@ -302,6 +341,11 @@ func (m *Model) messageLine() string {
 	switch m.mode {
 	case modePrompt:
 		return stKey.Render(m.prompt.label+": ") + m.input.View()
+	case modeFilter:
+		keys := renderHints([]hint{{"tab", "complete"}, {"↑↓", "choose"}, {"enter", "apply"}, {"esc", "revert"}}, m.w/2)
+		hint := runewidth.Truncate(m.comp.hint, max(0, m.w-lipgloss.Width(keys)-3), "…")
+		gap := max(1, m.w-lipgloss.Width(keys)-runewidth.StringWidth(hint))
+		return stDim.Render(hint) + strings.Repeat(" ", gap) + keys
 	case modeSort:
 		return stBold.Render("sort by: ") + renderHints([]hint{
 			{"t", "title"}, {"s", "size"}, {"d", "duration"}, {"a", "added"}, {"v", "viewed"}, {"p", "plays"},
@@ -477,43 +521,4 @@ func (m *Model) previewView() string {
 		b.WriteString(stOK.Render("y apply") + stDim.Render(" · n cancel"))
 	}
 	return stBox.Width(w + 4).Render(b.String())
-}
-
-const helpText = `plx — keys
-
-  j/k ↑/↓      move              g/G      top/bottom        ^d/^u  page
-  l/→/enter    open              h/←/⌫    back / up a folder
-  space        select            a        select all/none   A      invert
-  v            view selection    c        clear selection
-  /            filter            s        sort              f      folder lens
-  x or ;       actions           S        save as query     r      refresh
-  esc          clear filter      q        quit              ?      this help
-
-  Selection persists while you browse: pick items from several places,
-  then act on them all at once.
-
-filter language
-
-  alien                  title contains "alien"
-  size>4G  dur<30m       compare (sizes: K M G T; durations: m h d)
-  label:keep label:fav   both labels         label:keep,fav   either
-  -label:trash           negate any term     is:watched  -is:watched
-  path:/tv/anime/        substring at any depth    path:/tv/*/S01/*  glob
-  added<30d              added in the last 30 days  viewed>1y  added>2024-01-01
-  sort:size-,title       sort (- = descending)
-
-fields
-`
-
-func (m *Model) helpView() string {
-	var names []string
-	for _, f := range field.All() {
-		names = append(names, f.Name)
-	}
-	wrap := lipgloss.NewStyle().Width(max(20, m.w-4)).MarginLeft(2)
-	out := helpText + "\n" + wrap.Render(strings.Join(names, " ")) + "\n"
-	if l := legend(); l != "" {
-		out += "\nicons\n\n" + wrap.Render(l) + "\n"
-	}
-	return out + "\n" + stDim.Render("press any key")
 }

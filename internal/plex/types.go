@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"strconv"
+	"strings"
 )
 
 type envelope struct {
@@ -64,6 +65,23 @@ type Metadata struct {
 	Media               []Media    `json:"Media"`
 	Label               []Tag      `json:"Label"`
 	Genre               []Tag      `json:"Genre"`
+
+	// Detail fields, complete only from /library/metadata/{key}.
+	Guid                  FlexString `json:"guid"` // "Guid" is also a list of external IDs
+	Summary               string     `json:"summary"`
+	Tagline               string     `json:"tagline"`
+	OriginallyAvailableAt string     `json:"originallyAvailableAt"`
+	Rating                FlexFloat  `json:"rating"`
+	AudienceRating        FlexFloat  `json:"audienceRating"`
+	UserRating            FlexFloat  `json:"userRating"`
+	Thumb                 string     `json:"thumb"`
+	ParentThumb           string     `json:"parentThumb"`
+	GrandparentThumb      string     `json:"grandparentThumb"`
+	Director              []Tag      `json:"Director"`
+	Writer                []Tag      `json:"Writer"`
+	Role                  []Tag      `json:"Role"`
+	Country               []Tag      `json:"Country"`
+	Collection            []Tag      `json:"Collection"`
 }
 
 type Media struct {
@@ -76,14 +94,31 @@ type Media struct {
 	VideoCodec      string  `json:"videoCodec"`
 	AudioCodec      string  `json:"audioCodec"`
 	Container       string  `json:"container"`
+	AudioChannels   FlexInt `json:"audioChannels"`
+	VideoFrameRate  string  `json:"videoFrameRate"`
 	Part            []Part  `json:"Part"`
 }
 
 type Part struct {
-	ID       FlexInt `json:"id"`
-	Size     FlexInt `json:"size"`
-	File     string  `json:"file"`
-	Duration FlexInt `json:"duration"`
+	ID       FlexInt  `json:"id"`
+	Size     FlexInt  `json:"size"`
+	File     string   `json:"file"`
+	Duration FlexInt  `json:"duration"`
+	Stream   []Stream `json:"Stream"`
+}
+
+// Stream types.
+const (
+	StreamVideo    = 1
+	StreamAudio    = 2
+	StreamSubtitle = 3
+)
+
+type Stream struct {
+	StreamType   FlexInt `json:"streamType"`
+	Codec        string  `json:"codec"`
+	Language     string  `json:"language"`
+	DisplayTitle string  `json:"displayTitle"`
 }
 
 type Tag struct {
@@ -102,10 +137,19 @@ type Directory struct {
 // Plex is inconsistent about JSON types: IDs are sometimes strings and
 // sometimes numbers, booleans are sometimes true/false and sometimes "1"/1.
 // The Flex types decode any of those forms and treat null as the zero value.
+//
+// They also ignore arrays and objects: encoding/json matches keys
+// case-insensitively, and full metadata has both "rating" (a number) and
+// "Rating" (a list of rating sources), so a scalar field can be handed either.
+
+func composite(b []byte) bool { return len(b) > 0 && (b[0] == '[' || b[0] == '{') }
 
 type FlexString string
 
 func (f *FlexString) UnmarshalJSON(b []byte) error {
+	if composite(b) {
+		return nil
+	}
 	if bytes.Equal(b, []byte("null")) {
 		*f = ""
 		return nil
@@ -125,6 +169,9 @@ func (f *FlexString) UnmarshalJSON(b []byte) error {
 type FlexInt int64
 
 func (f *FlexInt) UnmarshalJSON(b []byte) error {
+	if composite(b) {
+		return nil
+	}
 	if bytes.Equal(b, []byte("null")) {
 		*f = 0
 		return nil
@@ -149,6 +196,22 @@ func (f *FlexInt) UnmarshalJSON(b []byte) error {
 	}
 	*f = FlexInt(fl)
 	return nil
+}
+
+type FlexFloat float64
+
+func (f *FlexFloat) UnmarshalJSON(b []byte) error {
+	if composite(b) {
+		return nil
+	}
+	s := strings.Trim(string(b), `"`)
+	if s == "null" || s == "" {
+		*f = 0
+		return nil
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	*f = FlexFloat(v)
+	return err
 }
 
 type FlexBool bool

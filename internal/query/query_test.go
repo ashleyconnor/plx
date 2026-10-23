@@ -69,6 +69,14 @@ func TestFilter(t *testing.T) {
 		{"Star Wars: Holiday", "4"}, // trailing colon is a word, not a field
 		{"-alien -lost", "4"},
 		{"season:1 episode:1", "3"},
+		{"has:label", "1,2,3"},           // any label
+		{"-has:label", "4"},              // no labels
+		{"label:*", "1,2,3"},             // glob form of the same
+		{"labelcount:1 label:keep", "2"}, // keep is the only label
+		{"labelcount>1", "1"},
+		{"has:show", "3,4"},
+		{"label:", "1,2,3,4"},   // incomplete term while typing: ignored
+		{"-is: size>4G", "1,2"}, // likewise
 	}
 	for _, c := range cases {
 		q, err := Parse(c.q)

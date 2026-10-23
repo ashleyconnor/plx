@@ -44,6 +44,10 @@ type Field struct {
 	Bool func(*model.Item) bool     // Bool
 
 	Width int // column width; 0 = not shown as a column by default
+
+	// Enum marks fields with a small set of values worth suggesting in
+	// filter autocomplete (labels, resolutions…), unlike titles or paths.
+	Enum bool
 }
 
 // Format renders the field's value for display.
