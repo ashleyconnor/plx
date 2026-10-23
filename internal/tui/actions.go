@@ -377,26 +377,27 @@ func (m *Model) previewKey(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// confirmKey handles the typed confirmation destructive plans require.
+// confirmKey drives the Yes/No buttons destructive plans require. Focus
+// starts on No: confirming takes a deliberate move to Yes, then enter.
 func (m *Model) confirmKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
-	case "esc":
+	case "esc", "q", "n":
 		m.preview, m.mode = nil, modeNormal
-		m.input.Blur()
-		return nil
-	case "enter":
-		if strings.TrimSpace(m.input.Value()) != "delete" {
+	case "left", "right", "h", "l", "tab", "shift+tab":
+		m.confirmYes = !m.confirmYes
+	case "y":
+		m.confirmYes = true // focus only; enter still confirms
+	case "enter", " ":
+		if !m.confirmYes {
+			m.preview, m.mode = nil, modeNormal
 			return nil
 		}
-		m.input.Blur()
 		p := m.preview
 		m.preview, m.mode = nil, modeRunning
 		m.progress = exec.Progress{Total: exec.Steps(p), Step: "starting…"}
 		return m.execute(p)
 	}
-	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(msg)
-	return cmd
+	return nil
 }
 
 func (m *Model) execute(p *plan.Plan) tea.Cmd {

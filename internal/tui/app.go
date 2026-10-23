@@ -63,6 +63,7 @@ type Model struct {
 	picker     *picker
 	prompt     *prompt
 	preview    *plan.Plan
+	confirmYes bool // destructive previews: focus is on Yes
 
 	progress exec.Progress
 	progCh   chan tea.Msg
@@ -181,12 +182,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus(msg.err.Error(), true)
 			return m, nil
 		}
-		m.preview, m.mode = msg.plan, modePreview
-		if msg.plan.Destructive() {
-			m.input.SetValue("")
-			m.input.Focus()
-			return m, textinput.Blink
-		}
+		m.preview, m.mode, m.confirmYes = msg.plan, modePreview, false
 		return m, nil
 	case pickerMsg:
 		m.picker, m.mode = msg.p, modePicker

@@ -461,6 +461,22 @@ func (m *Model) pickerView() string {
 	return stBox.Width(w + 4).Render(b.String())
 }
 
+var (
+	stButton    = lipgloss.NewStyle().Padding(0, 3).Foreground(lipgloss.AdaptiveColor{Light: "235", Dark: "252"}).Background(lipgloss.AdaptiveColor{Light: "252", Dark: "237"})
+	stButtonNo  = stButton.Foreground(lipgloss.Color("230")).Background(lipgloss.Color("62")).Bold(true)
+	stButtonYes = stButton.Foreground(lipgloss.Color("230")).Background(lipgloss.Color("160")).Bold(true)
+)
+
+// confirmButtons draws No / Yes buttons with the focused one highlighted;
+// Yes turns red when focused since it's destructive.
+func confirmButtons(yes bool) string {
+	no, ok := stButtonNo.Render("No"), stButton.Render("Yes")
+	if yes {
+		no, ok = stButton.Render("No"), stButtonYes.Render("Yes")
+	}
+	return no + "  " + ok
+}
+
 func (m *Model) previewView() string {
 	p := m.preview
 	w := min(90, m.w-6)
@@ -518,7 +534,8 @@ func (m *Model) previewView() string {
 	case p.Blocked():
 		b.WriteString(stDim.Render("can't apply · esc back"))
 	case p.Destructive():
-		b.WriteString(stErr.Render("type delete to confirm: ") + m.input.View() + "\n" + stDim.Render("enter confirm · esc cancel"))
+		b.WriteString(stBold.Render("Delete these files?") + "\n\n" + confirmButtons(m.confirmYes) + "\n\n" +
+			renderHints([]hint{{"←→", "choose"}, {"enter", "confirm"}, {"esc", "cancel"}}, w))
 	default:
 		b.WriteString(stOK.Render("y apply") + stDim.Render(" · n cancel"))
 	}
