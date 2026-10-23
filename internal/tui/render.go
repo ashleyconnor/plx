@@ -499,15 +499,20 @@ func (m *Model) pickerView() string {
 var (
 	stButton    = lipgloss.NewStyle().Padding(0, 3).Foreground(lipgloss.AdaptiveColor{Light: "235", Dark: "252"}).Background(lipgloss.AdaptiveColor{Light: "252", Dark: "237"})
 	stButtonNo  = stButton.Foreground(lipgloss.Color("230")).Background(lipgloss.Color("62")).Bold(true)
-	stButtonYes = stButton.Foreground(lipgloss.Color("230")).Background(lipgloss.Color("160")).Bold(true)
+	stButtonYes = stButton.Foreground(lipgloss.Color("230")).Background(lipgloss.Color("28")).Bold(true)
+	stButtonDel = stButton.Foreground(lipgloss.Color("230")).Background(lipgloss.Color("160")).Bold(true)
 )
 
-// confirmButtons draws No / Yes buttons with the focused one highlighted;
-// Yes turns red when focused since it's destructive.
-func confirmButtons(yes bool) string {
-	no, ok := stButtonNo.Render("No"), stButton.Render("Yes")
+// confirmButtons draws No / Yes buttons with their shortcut keys and the
+// focused one highlighted. A focused Yes is red when it deletes files.
+func confirmButtons(yes, destructive bool) string {
+	focusYes := stButtonYes
+	if destructive {
+		focusYes = stButtonDel
+	}
+	no, ok := stButtonNo.Render("No (n)"), stButton.Render("Yes (y)")
 	if yes {
-		no, ok = stButton.Render("No"), stButtonYes.Render("Yes")
+		no, ok = stButton.Render("No (n)"), focusYes.Render("Yes (y)")
 	}
 	return no + "  " + ok
 }
@@ -582,11 +587,13 @@ func (m *Model) previewView() string {
 	switch {
 	case p.Blocked():
 		b.WriteString(stDim.Render("can't apply · esc back"))
-	case p.Destructive():
-		b.WriteString(stBold.Render("Delete these files?") + "\n\n" + confirmButtons(m.confirmYes) + "\n\n" +
-			renderHints([]hint{{"←→", "choose"}, {"enter", "confirm"}, {"esc", "cancel"}}, w))
 	default:
-		b.WriteString(stOK.Render("y apply") + stDim.Render(" · n cancel"))
+		question := "Apply these changes?"
+		if p.Destructive() {
+			question = "Delete these files?"
+		}
+		b.WriteString(stBold.Render(question) + "\n\n" + confirmButtons(m.confirmYes, p.Destructive()) + "\n\n" +
+			renderHints([]hint{{"y", "yes"}, {"n", "no"}, {"←→", "choose"}, {"enter", "confirm"}, {"esc", "cancel"}}, w))
 	}
 	return stBox.Width(w + 4).Render(b.String())
 }

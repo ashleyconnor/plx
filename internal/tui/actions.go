@@ -416,48 +416,42 @@ func (m *Model) reorder() tea.Cmd {
 
 // --- preview and execution ---------------------------------------------------
 
+// previewKey drives the Yes/No buttons under every preview. Deleting
+// files starts focused on No, so a reflexive enter cancels; everything else
+// starts on Yes. y and n act immediately, wherever focus is.
 func (m *Model) previewKey(msg tea.KeyMsg) tea.Cmd {
-	if m.preview.Destructive() && !m.preview.Blocked() {
-		return m.confirmKey(msg)
+	cancel := func() tea.Cmd {
+		m.preview, m.mode = nil, modeNormal
+		return nil
+	}
+	if m.preview.Blocked() {
+		switch msg.String() {
+		case "esc", "q", "n", "enter":
+			return cancel()
+		}
+		return nil
 	}
 	switch msg.String() {
-	case "y", "enter":
-		if m.preview.Blocked() {
-			return nil
+	case "esc", "q", "n":
+		return cancel()
+	case "left", "right", "h", "l", "tab", "shift+tab":
+		m.confirmYes = !m.confirmYes
+	case "y":
+		return m.apply()
+	case "enter", " ":
+		if !m.confirmYes {
+			return cancel()
 		}
-		p := m.preview
-		m.preview = nil
-		m.mode = modeRunning
-		m.progress = exec.Progress{Total: exec.Steps(p), Step: "starting…"}
-		return m.execute(p)
-	case "n", "esc", "q":
-		m.preview = nil
-		m.mode = modeNormal
+		return m.apply()
 	}
 	return nil
 }
 
-// confirmKey drives the Yes/No buttons destructive plans require. Focus
-// starts on No: confirming takes a deliberate move to Yes, then enter.
-func (m *Model) confirmKey(msg tea.KeyMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc", "q", "n":
-		m.preview, m.mode = nil, modeNormal
-	case "left", "right", "h", "l", "tab", "shift+tab":
-		m.confirmYes = !m.confirmYes
-	case "y":
-		m.confirmYes = true // focus only; enter still confirms
-	case "enter", " ":
-		if !m.confirmYes {
-			m.preview, m.mode = nil, modeNormal
-			return nil
-		}
-		p := m.preview
-		m.preview, m.mode = nil, modeRunning
-		m.progress = exec.Progress{Total: exec.Steps(p), Step: "starting…"}
-		return m.execute(p)
-	}
-	return nil
+func (m *Model) apply() tea.Cmd {
+	p := m.preview
+	m.preview, m.mode = nil, modeRunning
+	m.progress = exec.Progress{Total: exec.Steps(p), Step: "starting…"}
+	return m.execute(p)
 }
 
 func (m *Model) execute(p *plan.Plan) tea.Cmd {

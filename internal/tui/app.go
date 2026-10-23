@@ -198,7 +198,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus(msg.err.Error(), true)
 			return m, nil
 		}
-		m.preview, m.mode, m.confirmYes = msg.plan, modePreview, false
+		m.preview, m.mode = msg.plan, modePreview
+		m.confirmYes = !msg.plan.Destructive() // file deletions default to No
 		return m, nil
 	case pickerMsg:
 		m.picker, m.mode = msg.p, modePicker

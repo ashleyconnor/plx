@@ -39,7 +39,9 @@ lens, `x` or `;` actions (including delete from disk), `S` save query,
 
 Selection persists across views, so you can collect items from several places
 and act on all of them at once. Every action shows a preview first: what will
-change, what gets skipped and why. Changes are logged to
+change, what gets skipped and why, then **No (n)** / **Yes (y)** buttons
+(`y`/`n` act at once; `←→` and `enter` work too). Focus starts on Yes,
+except for anything that deletes files, which starts on No. Changes are logged to
 `~/.config/plx/actions.log`.
 
 ## Filter language
