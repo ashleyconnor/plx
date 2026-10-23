@@ -103,8 +103,9 @@ func (m *Model) infoKey(msg tea.KeyMsg) tea.Cmd {
 	case " ":
 		m.setSelected(in.item, !m.isSelected(in.item))
 	case "x", ";":
+		it := m.info.item
 		m.info, m.mode = nil, modeNormal
-		return m.openMenu()
+		return m.openMenuFor([]*model.Item{it})
 	}
 	return nil
 }

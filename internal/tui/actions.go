@@ -35,11 +35,16 @@ type menu struct {
 }
 
 func (m *Model) openMenu() tea.Cmd {
+	return m.openMenuFor(m.targets())
+}
+
+// openMenuFor opens the action menu for specific items; the info view uses
+// it so actions apply to the item shown, not to the selection.
+func (m *Model) openMenuFor(items []*model.Item) tea.Cmd {
 	v := m.top()
 	if v.kind != itemView || v.loading {
 		return nil
 	}
-	items := m.targets()
 	if len(items) == 0 {
 		m.setStatus("nothing selected", true)
 		return nil
