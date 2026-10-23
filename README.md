@@ -1,0 +1,90 @@
+# plx
+
+An nnn-style terminal UI for managing a Plex library through the Plex API.
+
+Libraries, playlists, collections, labels and saved queries all work the same
+way: each is a list of items you can filter, sort, browse by folder, select
+from, and act on in bulk. The Plex web UI can't do most of this.
+
+## Setup
+
+```sh
+go install github.com/ashleyconnor/plx/cmd/plx@latest
+```
+
+Configure with `~/.config/plx/config.toml`:
+
+```toml
+url = "192.168.1.10:32400"   # https:// is assumed if no scheme
+token = "…"
+insecure = true              # skip TLS verification (self-signed certs)
+```
+
+or with the `PLEX_URL`, `PLEX_TOKEN` and `PLEX_INSECURE` environment variables.
+
+## Use
+
+```sh
+plx                                   # TUI
+plx ls                                # list sources
+plx q playlist:Watchlist -is:watched  # query from the shell
+plx fields                            # query fields
+```
+
+Keys: `j/k` move, `l/h` open/back, `space` select, `a` select visible,
+`/` filter, `s` sort, `f` folder lens, `;` or `x` actions, `S` save query,
+`?` help.
+
+Selection persists across views, so you can collect items from several places
+and act on all of them at once. Every action shows a preview first: what will
+change, what gets skipped and why. Changes are logged to
+`~/.config/plx/actions.log`.
+
+## Filter language
+
+```
+alien                       title contains "alien"
+size>4G  dur<30m            comparisons (sizes K M G T, durations m h d)
+label:keep label:fav        both labels
+label:keep,fav              either label
+-label:trash                negate any term
+is:watched  -is:watched     yes/no fields
+path:/tv/anime/             substring at any depth; path:/tv/*/S01/* glob
+added<30d  viewed>1y        relative ages; added>2024-01-01 absolute dates
+sort:size-,title            sort, - for descending
+```
+
+## Saved queries
+
+`~/.config/plx/queries.toml`, appended by `S` in the TUI or written by hand:
+
+```toml
+[[query]]
+name    = "Big unwatched anime"
+filter  = "-is:watched size>4G path:/tv/anime/"
+sort    = "size-"
+columns = ["size", "duration", "labels"]
+
+  [[query.sources]]
+  section = "TV"
+
+  [[query.sources]]
+  playlist = "Watch later"   # title or ratingKey
+```
+
+Sources can be `section`, `playlist`, `collection` (with optional `section`),
+or `label` with `section`. A query with several sources shows their union.
+
+## Layout
+
+```
+internal/plex    HTTP client and DTOs that mirror Plex's JSON. No logic.
+internal/model   Item and Container domain types, built from DTOs.
+internal/field   Registry of item attributes, used by filter, sort and columns.
+internal/query   Filter language: lexer, parser, evaluation, sorting.
+internal/source  Libraries, playlists, collections, labels, saved queries → items.
+internal/plan    Turns intents into previewable plans; every Plex rule lives here.
+internal/exec    Applies plans through the client and writes the action log.
+internal/store   Config, saved queries.
+internal/tui     Bubble Tea UI.
+```

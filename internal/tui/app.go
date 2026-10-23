@@ -1,0 +1,501 @@
+// Package tui is plx's Bubble Tea interface: an nnn-style browser where every
+// playlist, collection, label, library and saved query is a list of items
+// with the same filter, sort, select and act workflow.
+package tui
+
+import (
+	"context"
+	"fmt"
+	"path"
+
+	"github.com/charmbracelet/bubbles/spinner"
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/ashleyconnor/plx/internal/exec"
+	"github.com/ashleyconnor/plx/internal/field"
+	"github.com/ashleyconnor/plx/internal/model"
+	"github.com/ashleyconnor/plx/internal/plan"
+	"github.com/ashleyconnor/plx/internal/query"
+	"github.com/ashleyconnor/plx/internal/source"
+)
+
+type mode int
+
+const (
+	modeNormal mode = iota
+	modeFilter
+	modeSort
+	modeMenu
+	modePicker
+	modePrompt
+	modePreview
+	modeRunning
+	modeHelp
+)
+
+type Model struct {
+	cat *source.Catalog
+	ctx context.Context
+
+	stack []*view
+	w, h  int
+	mode  mode
+
+	input     textinput.Model // filter and prompt line
+	inputPrev string
+
+	sel      map[string]*model.Item
+	selOrder []string
+
+	status    string
+	statusErr bool
+
+	menu    *menu
+	picker  *picker
+	prompt  *prompt
+	preview *plan.Plan
+
+	progress exec.Progress
+	progCh   chan tea.Msg
+	spinner  spinner.Model
+}
+
+func Run(c *source.Catalog) error {
+	m := newModel(c)
+	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	return err
+}
+
+func newModel(c *source.Catalog) *Model {
+	in := textinput.New()
+	in.Prompt = ""
+	sp := spinner.New()
+	sp.Spinner = spinner.MiniDot
+	m := &Model{cat: c, ctx: context.Background(), input: in, sel: map[string]*model.Item{}, spinner: sp, w: 100, h: 30}
+	m.stack = []*view{m.rootView()}
+	return m
+}
+
+func (m *Model) top() *view { return m.stack[len(m.stack)-1] }
+
+func (m *Model) Init() tea.Cmd { return tea.Batch(m.spinner.Tick, m.load(m.top())) }
+
+// --- messages ----------------------------------------------------------------
+
+type loadedMsg struct {
+	v     *view
+	src   source.Source
+	rows  []row
+	items []*model.Item
+	err   error
+}
+
+type planMsg struct {
+	plan *plan.Plan
+	err  error
+}
+
+type progressMsg exec.Progress
+
+type execDoneMsg struct {
+	plan *plan.Plan
+	err  error
+}
+
+type statusMsg struct {
+	text string
+	err  bool
+}
+
+func (m *Model) load(v *view) tea.Cmd {
+	v.loading, v.err, v.stale = true, nil, false
+	return func() tea.Msg {
+		if v.kind == dirView {
+			rows, err := v.loader(m.ctx)
+			return loadedMsg{v: v, rows: rows, err: err}
+		}
+		src := v.src
+		if src == nil {
+			var err error
+			if src, err = v.resolve(m.ctx); err != nil {
+				return loadedMsg{v: v, err: err}
+			}
+		}
+		items, err := m.cat.Items(m.ctx, src)
+		return loadedMsg{v: v, src: src, items: items, err: err}
+	}
+}
+
+func (m *Model) setStatus(text string, isErr bool) {
+	m.status, m.statusErr = text, isErr
+}
+
+// --- update ------------------------------------------------------------------
+
+func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.w, m.h = msg.Width, msg.Height
+		return m, nil
+	case spinner.TickMsg:
+		var cmd tea.Cmd
+		m.spinner, cmd = m.spinner.Update(msg)
+		return m, cmd
+	case loadedMsg:
+		v := msg.v
+		v.loading, v.err = false, msg.err
+		if msg.err == nil {
+			if v.kind == dirView {
+				v.all = msg.rows
+			} else {
+				v.src, v.items = msg.src, msg.items
+			}
+			v.rebuild()
+		}
+		return m, nil
+	case planMsg:
+		if msg.err != nil {
+			m.mode = modeNormal
+			m.setStatus(msg.err.Error(), true)
+			return m, nil
+		}
+		m.preview, m.mode = msg.plan, modePreview
+		return m, nil
+	case pickerMsg:
+		m.picker, m.mode = msg.p, modePicker
+		m.picker.input.Focus()
+		return m, textinput.Blink
+	case progressMsg:
+		m.progress = exec.Progress(msg)
+		return m, waitFor(m.progCh)
+	case execDoneMsg:
+		return m, m.finished(msg)
+	case statusMsg:
+		m.mode = modeNormal
+		m.setStatus(msg.text, msg.err)
+		return m, nil
+	case tea.KeyMsg:
+		if msg.String() == "ctrl+c" {
+			return m, tea.Quit
+		}
+		return m, m.key(msg)
+	}
+	return m, nil
+}
+
+func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
+	switch m.mode {
+	case modeFilter:
+		return m.filterKey(msg)
+	case modeSort:
+		return m.sortKey(msg)
+	case modeMenu:
+		return m.menuKey(msg)
+	case modePicker:
+		return m.pickerKey(msg)
+	case modePrompt:
+		return m.promptKey(msg)
+	case modePreview:
+		return m.previewKey(msg)
+	case modeRunning:
+		return nil
+	case modeHelp:
+		m.mode = modeNormal
+		return nil
+	}
+	return m.normalKey(msg)
+}
+
+func (m *Model) normalKey(msg tea.KeyMsg) tea.Cmd {
+	v := m.top()
+	m.status = ""
+	page := max(1, m.listHeight()-1)
+	switch msg.String() {
+	case "q":
+		return tea.Quit
+	case "?":
+		m.mode = modeHelp
+	case "j", "down":
+		v.cursor++
+	case "k", "up":
+		v.cursor--
+	case "g", "home":
+		v.cursor = 0
+	case "G", "end":
+		v.cursor = len(v.rows) - 1
+	case "ctrl+d", "pgdown":
+		v.cursor += page
+	case "ctrl+u", "pgup":
+		v.cursor -= page
+	case "l", "right", "enter":
+		return m.open()
+	case "h", "left", "backspace":
+		return m.back()
+	case "/":
+		m.inputPrev = v.filterText
+		m.input.SetValue(v.filterText)
+		m.input.CursorEnd()
+		m.input.Focus()
+		m.mode = modeFilter
+		return textinput.Blink
+	case "esc":
+		if v.filterText != "" {
+			v.setFilter("")
+		} else if len(m.sel) > 0 {
+			m.clearSelection()
+		}
+	case "s":
+		if v.kind == itemView {
+			m.mode = modeSort
+		}
+	case "f":
+		if v.kind == itemView {
+			v.lens = !v.lens
+			v.folder = ""
+			v.cursor = 0
+			v.rebuild()
+		}
+	case " ":
+		m.toggleCurrent()
+		v.cursor++
+	case "a":
+		m.selectVisible(true)
+	case "A":
+		m.invertVisible()
+	case "c":
+		m.clearSelection()
+	case ";", "x":
+		return m.openMenu()
+	case "S":
+		return m.promptSaveQuery()
+	case "r":
+		return m.refresh()
+	}
+	v.clamp()
+	return nil
+}
+
+func (m *Model) open() tea.Cmd {
+	v := m.top()
+	r, ok := v.current()
+	if !ok {
+		return nil
+	}
+	switch {
+	case r.push != nil:
+		nv := r.push()
+		m.stack = append(m.stack, nv)
+		return m.load(nv)
+	case r.isFolder():
+		v.folder, v.cursor = r.folder, 0
+		v.rebuild()
+	}
+	return nil
+}
+
+func (m *Model) back() tea.Cmd {
+	v := m.top()
+	if v.kind == itemView && v.lens && v.folder != v.folderRoot {
+		prev := v.folder
+		v.folder = path.Dir(v.folder)
+		v.rebuild()
+		for i, r := range v.rows { // land on the folder we came from
+			if r.folder == prev {
+				v.cursor = i
+			}
+		}
+		return nil
+	}
+	if len(m.stack) == 1 {
+		return nil
+	}
+	m.stack = m.stack[:len(m.stack)-1]
+	if p := m.top(); p.stale {
+		return m.load(p)
+	}
+	return nil
+}
+
+func (m *Model) refresh() tea.Cmd {
+	v := m.top()
+	m.cat.Invalidate()
+	for _, sv := range m.stack {
+		sv.stale = true
+	}
+	return m.load(v)
+}
+
+func (m *Model) filterKey(msg tea.KeyMsg) tea.Cmd {
+	v := m.top()
+	switch msg.String() {
+	case "enter":
+		m.mode = modeNormal
+		m.input.Blur()
+		return nil
+	case "esc":
+		m.mode = modeNormal
+		m.input.Blur()
+		v.setFilter(m.inputPrev)
+		return nil
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	v.setFilter(m.input.Value())
+	return cmd
+}
+
+// sortChoices are the one-key sorts; numeric fields default to descending.
+var sortChoices = []struct {
+	key   string
+	field *field.Field
+	desc  bool
+}{
+	{"t", field.Title, false},
+	{"s", field.Size, true},
+	{"d", field.Dur, true},
+	{"a", field.Added, true},
+	{"v", field.Viewed, true},
+	{"p", field.Plays, true},
+	{"y", field.Year, true},
+	{"b", field.Bitrate, true},
+	{"f", field.Path, false},
+}
+
+func (m *Model) sortKey(msg tea.KeyMsg) tea.Cmd {
+	v := m.top()
+	m.mode = modeNormal
+	k := msg.String()
+	switch k {
+	case "r":
+		if len(v.sortKeys) > 0 {
+			v.sortKeys[0].Desc = !v.sortKeys[0].Desc
+		}
+	case "0":
+		v.sortKeys = nil
+	case "c":
+		m.prompt = &prompt{label: "sort", value: query.FormatSort(v.sortKeys), submit: func(s string) tea.Cmd {
+			keys, err := query.ParseSort(s)
+			if err != nil {
+				return statusCmd(err.Error(), true)
+			}
+			v.sortKeys = keys
+			v.rebuild()
+			return nil
+		}}
+		return m.startPrompt()
+	default:
+		for _, c := range sortChoices {
+			if c.key == k {
+				if len(v.sortKeys) > 0 && v.sortKeys[0].Field == c.field {
+					v.sortKeys = []query.SortKey{{Field: c.field, Desc: !v.sortKeys[0].Desc}}
+				} else {
+					v.sortKeys = []query.SortKey{{Field: c.field, Desc: c.desc}}
+				}
+			}
+		}
+	}
+	v.rebuild()
+	return nil
+}
+
+// --- selection ---------------------------------------------------------------
+
+func (m *Model) isSelected(it *model.Item) bool { return m.sel[it.Key] != nil }
+
+func (m *Model) setSelected(it *model.Item, on bool) {
+	if on && m.sel[it.Key] == nil {
+		m.sel[it.Key] = it
+		m.selOrder = append(m.selOrder, it.Key)
+	} else if !on && m.sel[it.Key] != nil {
+		delete(m.sel, it.Key)
+		for i, k := range m.selOrder {
+			if k == it.Key {
+				m.selOrder = append(m.selOrder[:i], m.selOrder[i+1:]...)
+				break
+			}
+		}
+	}
+}
+
+func (m *Model) toggleCurrent() {
+	r, ok := m.top().current()
+	if !ok {
+		return
+	}
+	switch {
+	case r.item != nil:
+		m.setSelected(r.item, !m.isSelected(r.item))
+	case r.isFolder():
+		all := true
+		for _, it := range r.under {
+			all = all && m.isSelected(it)
+		}
+		for _, it := range r.under {
+			m.setSelected(it, !all)
+		}
+	}
+}
+
+func (m *Model) visibleItems() []*model.Item {
+	var out []*model.Item
+	for _, r := range m.top().rows {
+		if r.item != nil {
+			out = append(out, r.item)
+		}
+		out = append(out, r.under...)
+	}
+	return out
+}
+
+func (m *Model) selectVisible(on bool) {
+	for _, it := range m.visibleItems() {
+		m.setSelected(it, on)
+	}
+}
+
+func (m *Model) invertVisible() {
+	for _, it := range m.visibleItems() {
+		m.setSelected(it, !m.isSelected(it))
+	}
+}
+
+func (m *Model) clearSelection() {
+	m.sel = map[string]*model.Item{}
+	m.selOrder = nil
+}
+
+func (m *Model) selected() []*model.Item {
+	out := make([]*model.Item, 0, len(m.selOrder))
+	for _, k := range m.selOrder {
+		out = append(out, m.sel[k])
+	}
+	return out
+}
+
+// targets are what an action applies to: the selection, or else the row
+// under the cursor (a folder row means everything below it).
+func (m *Model) targets() []*model.Item {
+	if len(m.sel) > 0 {
+		return m.selected()
+	}
+	r, ok := m.top().current()
+	if !ok {
+		return nil
+	}
+	if r.item != nil {
+		return []*model.Item{r.item}
+	}
+	return r.under
+}
+
+func statusCmd(text string, isErr bool) tea.Cmd {
+	return func() tea.Msg { return statusMsg{text, isErr} }
+}
+
+func plural(n int, word string) string {
+	if n == 1 {
+		return fmt.Sprintf("1 %s", word)
+	}
+	return fmt.Sprintf("%d %ss", n, word)
+}
