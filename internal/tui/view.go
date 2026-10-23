@@ -24,6 +24,8 @@ type row struct {
 	icon          string
 	label, detail string
 	push          func() *view // directory entries
+	badge         string       // sidebar: a short count
+	expand        bool         // sidebar: the group starts expanded
 
 	item *model.Item
 
@@ -62,9 +64,14 @@ type view struct {
 	selection bool // the selection, not a source
 	indexing  bool // collection/playlist membership is being indexed
 
+	placeholder bool // the empty list shown before a source is chosen
+	fetched     bool // items have loaded at least once
+
 	loading, stale bool
 	err            error
 }
+
+func emptyView() *view { return &view{kind: dirView, placeholder: true} }
 
 func (v *view) container() *model.Container {
 	if v.src == nil {

@@ -484,17 +484,13 @@ func waitFor(ch chan tea.Msg) tea.Cmd {
 // finished reloads everything: an action can change any list on screen.
 func (m *Model) finished(msg execDoneMsg) tea.Cmd {
 	m.mode = modeNormal
-	m.cat.Invalidate()
-	for _, v := range m.stack {
-		v.stale = true
-	}
 	if msg.err != nil {
 		m.setStatus("failed: "+msg.err.Error()+" (completed steps were kept; see actions.log)", true)
 	} else {
 		m.setStatus("done: "+msg.plan.Title, false)
 		m.clearSelection()
 	}
-	return m.load(m.top())
+	return m.invalidate()
 }
 
 // --- prompt ------------------------------------------------------------------
@@ -552,10 +548,7 @@ func (m *Model) promptSaveQuery() tea.Cmd {
 		if err := store.AppendQuery(q); err != nil {
 			return statusCmd(err.Error(), true)
 		}
-		for _, sv := range m.stack {
-			sv.stale = true
-		}
-		return statusCmd(fmt.Sprintf("saved query %q (Queries/)", name), false)
+		return tea.Batch(m.reloadSide(), statusCmd(fmt.Sprintf("saved query %q (Queries/)", name), false))
 	}}
 	return m.startPrompt()
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/mattn/go-runewidth"
 
 	"github.com/ashleyconnor/plx/internal/field"
@@ -28,11 +29,79 @@ var (
 	stBox    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("39")).Padding(0, 1)
 )
 
-// Fixed lines around the list: header, filter line, column header, two
-// detail lines, message line, key hints.
-const chrome = 7
+// layout is the width of each pane; 0 means the pane is hidden. Panes are
+// separated by a one-column rule.
+type layout struct{ side, list, detail int }
 
-func (m *Model) listHeight() int { return max(1, m.h-chrome) }
+const (
+	minListW   = 56
+	minDetailW = 36
+)
+
+// layout fits the panes to the terminal: the details pane goes first when
+// space runs out, then the sidebar, leaving the focused pane on its own.
+func (m *Model) layout() layout {
+	side := max(22, min(30, m.w/6))
+	detail := 0
+	if !m.hideDetail {
+		detail = max(minDetailW, min(64, m.w*3/10))
+	}
+	if m.w-side-detail-2 < minListW {
+		detail = 0
+	}
+	if detail == 0 && m.w-side-1 < minListW {
+		if m.focus == focusSide {
+			return layout{side: m.w}
+		}
+		return layout{list: m.w}
+	}
+	list := m.w - side - 1
+	if detail > 0 {
+		list -= detail + 1
+	}
+	return layout{side, list, detail}
+}
+
+// listW is the list pane's width, or the terminal's while it's hidden.
+func (m *Model) listW() int {
+	if w := m.layout().list; w > 0 {
+		return w
+	}
+	return m.w
+}
+
+// bodyHeight is the panes' height: everything but the header, filter line,
+// message line and key hints, and the two-line item summary shown under the
+// list when there's no details pane.
+func (m *Model) bodyHeight() int {
+	h := m.h - 4
+	if m.summaryShown() {
+		h -= 2
+	}
+	return max(2, h)
+}
+
+func (m *Model) summaryShown() bool {
+	lay := m.layout()
+	return lay.list > 0 && lay.detail == 0
+}
+
+// listHeight is the number of rows under the list's column header.
+func (m *Model) listHeight() int { return max(1, m.bodyHeight()-1) }
+
+// paneTitle is a pane's first line, highlighted when the pane has focus.
+func paneTitle(title string, w int, focused bool) string {
+	if focused {
+		return stKey.Render(fit(title, w))
+	}
+	return stDim.Render(fit(title, w))
+}
+
+// padANSI truncates or pads a styled line to exactly w columns.
+func padANSI(s string, w int) string {
+	s = ansi.Truncate(s, w, "")
+	return s + strings.Repeat(" ", max(0, w-ansi.StringWidth(s)))
+}
 
 func humanSize(items []*model.Item) string {
 	var n int64
@@ -74,18 +143,65 @@ func (m *Model) View() string {
 	var b strings.Builder
 	b.WriteString(m.header(v) + "\n")
 	b.WriteString(m.filterLine(v) + "\n")
-	b.WriteString(m.columnHeader(v) + "\n")
-	b.WriteString(m.list(v))
-	b.WriteString(m.detail(v) + "\n")
+	b.WriteString(m.body(v))
+	if m.summaryShown() {
+		b.WriteString(m.detail(v) + "\n")
+	}
 	b.WriteString(m.messageLine() + "\n")
 	b.WriteString(m.hintsLine(v))
 	return b.String()
 }
 
+// body lays the visible panes side by side.
+func (m *Model) body(v *view) string {
+	lay := m.layout()
+	h := m.bodyHeight()
+	type pane struct {
+		lines []string
+		w     int
+	}
+	var panes []pane
+	if lay.side > 0 {
+		panes = append(panes, pane{m.sideView(lay.side, h), lay.side})
+	}
+	if lay.list > 0 {
+		lines := append([]string{m.columnHeader(v)}, strings.Split(strings.TrimSuffix(m.list(v), "\n"), "\n")...)
+		panes = append(panes, pane{lines, lay.list})
+	}
+	if lay.detail > 0 {
+		panes = append(panes, pane{m.detailView(lay.detail, h), lay.detail})
+	}
+	rule := stDim.Render("│")
+	var b strings.Builder
+	for i := 0; i < h; i++ {
+		for j, p := range panes {
+			if j > 0 {
+				b.WriteString(rule)
+			}
+			line := ""
+			if i < len(p.lines) {
+				line = p.lines[i]
+			}
+			b.WriteString(padANSI(line, p.w))
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 func (m *Model) breadcrumb() string {
 	var parts []string
-	for _, v := range m.stack {
-		parts = append(parts, v.title)
+	stack := m.stack
+	if n := m.side.active; n != nil && stack[0] == n.view { // the sidebar path names the source
+		for ; n != nil; n = n.parent {
+			parts = append([]string{n.name()}, parts...)
+		}
+		stack = stack[1:]
+	}
+	for _, v := range stack {
+		if v.title != "" {
+			parts = append(parts, v.title)
+		}
 	}
 	v := m.top()
 	if v.kind == itemView && v.lens {
@@ -139,7 +255,7 @@ func (m *Model) filterLine(v *view) string {
 }
 
 func (m *Model) titleWidth(v *view) int {
-	w := m.w - 2
+	w := m.listW() - 2
 	for _, c := range v.columns {
 		w -= v.colWidth(c) + 1
 	}
@@ -147,15 +263,16 @@ func (m *Model) titleWidth(v *view) int {
 }
 
 func (m *Model) columnHeader(v *view) string {
+	focused := m.focus == focusList
 	if v.kind != itemView {
-		return ""
+		return paneTitle("", m.listW(), focused)
 	}
 	var b strings.Builder
 	b.WriteString("  " + strings.Repeat(" ", cellWidth()) + fit("TITLE", m.titleWidth(v)-cellWidth()))
 	for _, c := range v.columns {
 		b.WriteString(" " + fitLeft(strings.ToUpper(columnLabel(c)), v.colWidth(c)))
 	}
-	return stDim.Render(b.String())
+	return paneTitle(b.String(), m.listW(), focused)
 }
 
 // columnLabel is the field name, or its shortest alias if the name doesn't fit.
@@ -210,6 +327,8 @@ func (m *Model) list(v *view) string {
 		h -= len(drop)
 	}
 	switch {
+	case v.placeholder:
+		lines = append(lines, stDim.Render("  choose a library, playlist, collection, label or query"))
 	case v.loading:
 		lines = append(lines, "  "+m.spinner.View()+" loading…")
 	case v.indexing && len(v.rows) == 0:
@@ -243,7 +362,7 @@ func (m *Model) dropdown(n int) []string {
 	if m.compSel >= n {
 		start = m.compSel - n + 1
 	}
-	w := min(70, m.w-6)
+	w := min(70, m.listW()-6)
 	var rows []string
 	for i := start; i < len(sugs) && i < start+n; i++ {
 		s := sugs[i]
@@ -293,7 +412,7 @@ func (m *Model) renderRow(v *view, r row, cursor bool) string {
 		}
 		line = cell(icons.folder) + name + " " + fitLeft(field.HumanBytes(r.size), field.Size.Width) + "  " + stDim.Render(plural(len(r.under), "item"))
 	default:
-		w := m.w - 2 - cellWidth()
+		w := m.listW() - 2 - cellWidth()
 		nameW := min(w, 40)
 		name := fit(r.label, nameW)
 		if r.push != nil && !cursor {
@@ -306,7 +425,10 @@ func (m *Model) renderRow(v *view, r row, cursor bool) string {
 		marker = stSel.Render("● ")
 	}
 	if cursor {
-		return marker + stCursor.Render(fit(stripANSI(line), m.w-2))
+		if m.focus != focusList { // keep the place, quietly
+			return marker + stBold.Underline(true).Render(fit(stripANSI(line), m.listW()-2))
+		}
+		return marker + stCursor.Render(fit(stripANSI(line), m.listW()-2))
 	}
 	if selected {
 		return marker + stSel.Render(stripANSI(line))
@@ -432,11 +554,24 @@ func renderHints(hs []hint, w int) string {
 
 func (m *Model) hintsLine(v *view) string {
 	var hs []hint
-	if v.kind == itemView {
+	switch {
+	case m.focus == focusSide:
+		hs = []hint{{"↑↓", "move"}, {"→", "open"}, {"←", "collapse"}, {"tab", "next pane"}}
+		if len(m.sel) > 0 {
+			hs = append(hs, hint{"v", "view selected"}, hint{"x", "actions"})
+		}
+		hs = append(hs, hint{"p", "details"}, hint{"?", "help"}, hint{"q", "quit"})
+	case m.focus == focusDetail:
+		sel := "select"
+		if m.info != nil && m.isSelected(m.info.item) {
+			sel = "unselect"
+		}
+		hs = []hint{{"j/k", "scroll"}, {"space", sel}, {"x", "actions"}, {"tab", "next pane"}, {"esc", "back to list"}}
+	case v.kind == itemView:
 		hs = []hint{{"space", "select"}, {"a", "all/none"}, {"v", "view selected"}, {"x", "actions"},
-			{"/", "filter"}, {"s", "sort"}, {"f", "folders"}, {"S", "save"}, {"?", "help"}}
-	} else {
-		hs = []hint{{"→", "open"}, {"←", "back"}, {"/", "filter"}}
+			{"/", "filter"}, {"s", "sort"}, {"f", "folders"}, {"tab", "next pane"}, {"S", "save"}, {"?", "help"}}
+	default:
+		hs = []hint{{"←", "sources"}, {"tab", "next pane"}}
 		if len(m.sel) > 0 {
 			hs = append(hs, hint{"v", "view selected"})
 		}

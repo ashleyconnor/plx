@@ -32,10 +32,17 @@ plx q playlist:Watchlist -is:watched  # query from the shell
 plx fields                            # query fields
 ```
 
-Keys: `j/k` move, `l/h` open/back, `space` select, `a` select visible,
-`a` select all/none, `v` view selection, `/` filter, `s` sort, `f` folder
-lens, `x` or `;` actions (including delete from disk), `S` save query,
-`?` help.
+The screen has three panes: sources on the left (libraries, playlists,
+collections and labels by library, saved queries), the item list in the
+middle, and the highlighted item's details on the right. Resting the cursor
+on a source shows it in the list; `tab` moves between panes and `p` hides
+the details pane. On narrow terminals the details pane goes first, then the
+sidebar.
+
+Keys: `j/k` move, `l/h` open/back (`h` at the top of a list returns to the
+sources), `space` select, `a` select all/none, `v` view selection, `/`
+filter, `s` sort, `f` folder lens, `x` or `;` actions (including delete from
+disk), `S` save query, `?` help.
 
 Selection persists across views, so you can collect items from several places
 and act on all of them at once. Every action shows a preview first: what will
@@ -79,9 +86,11 @@ While typing a filter, `tab` completes field names, `is:`/`has:` targets,
 sort fields and values such as labels, genres and resolutions (taken from the
 list you're filtering, most common first); `↑`/`↓` choose a suggestion.
 
-`enter` (or `i`) on an item opens its details: full metadata, every media
-version with files, audio and subtitle streams, and the poster drawn with
-half-block characters, which works in any 256-colour or true-colour terminal.
+The details pane shows full metadata, every media version with files, audio
+and subtitle streams, and the poster drawn with half-block characters, which
+works in any 256-colour or true-colour terminal. It's fetched once the cursor
+rests on an item. `enter` (or `i`) focuses the pane to scroll it and looks up
+the item's playlists; without room for the pane it opens as an overlay.
 
 ## Saved queries
 

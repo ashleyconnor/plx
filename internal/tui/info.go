@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/mattn/go-runewidth"
 
 	"github.com/ashleyconnor/plx/internal/field"
 	"github.com/ashleyconnor/plx/internal/model"
@@ -16,16 +17,27 @@ import (
 // Poster size in cells; half-block rendering gives 2 pixels per row.
 const posterCols, posterRows = 24, 18
 
-// info is the item detail overlay. Full metadata and the poster load
+// info is an item's details, shown in the details pane (or an overlay when
+// the terminal is too narrow for it). Full metadata and the poster load
 // asynchronously; the list item is shown until they arrive.
 type info struct {
 	item       *model.Item
 	meta       *plex.Metadata
+	requested  bool
 	err        error
 	poster     string
 	posterDone bool
 	scroll     int
 }
+
+type detailTickMsg struct{ key string }
+
+// detailDelay is how long the list cursor rests on an item before its full
+// details are fetched, so scrolling doesn't request every item passed.
+const detailDelay = 150 * time.Millisecond
+
+// maxInfos bounds the details cache; it's simply emptied when full.
+const maxInfos = 300
 
 type infoMsg struct {
 	key  string
@@ -38,16 +50,79 @@ type posterMsg struct {
 	art string
 }
 
-func (m *Model) openInfo(it *model.Item) tea.Cmd {
-	m.info, m.mode = &info{item: it}, modeInfo
-	meta := func() tea.Msg {
-		meta, err := m.cat.C.Metadata(m.ctx, it.Key)
-		return infoMsg{key: it.Key, meta: meta, err: err}
+func (m *Model) infoFor(it *model.Item) *info {
+	in := m.infos[it.Key]
+	if in == nil {
+		if len(m.infos) >= maxInfos {
+			m.infos = map[string]*info{}
+		}
+		in = &info{item: it}
+		m.infos[it.Key] = in
 	}
+	in.item = it // a reload makes new items
+	return in
+}
+
+func (m *Model) fetchInfo(in *info) tea.Cmd {
+	if in.requested {
+		return nil
+	}
+	in.requested = true
+	key := in.item.Key
+	return func() tea.Msg {
+		meta, err := m.cat.C.Metadata(m.ctx, key)
+		return infoMsg{key: key, meta: meta, err: err}
+	}
+}
+
+// syncInfo points the details pane at the item under the list cursor, and
+// fetches its full details once the cursor rests there.
+func (m *Model) syncInfo() tea.Cmd {
+	if m.mode == modeInfo || m.layout().detail == 0 {
+		return nil
+	}
+	r, ok := m.top().current()
+	if !ok || r.item == nil {
+		m.info = nil
+		if m.focus == focusDetail {
+			m.focus = focusList
+		}
+		return nil
+	}
+	if m.info != nil && m.info.item.Key == r.item.Key {
+		m.info.item = r.item
+		return nil
+	}
+	m.info = m.infoFor(r.item)
+	if m.info.requested {
+		return nil
+	}
+	key := r.item.Key
+	return tea.Tick(detailDelay, func(time.Time) tea.Msg { return detailTickMsg{key} })
+}
+
+// showInfo focuses the details pane on an item, or opens the overlay when
+// there's no room for the pane. Either way playlist membership is indexed
+// so the details can list them.
+func (m *Model) showInfo(it *model.Item) tea.Cmd {
+	m.info = m.infoFor(it)
+	if m.layout().detail > 0 {
+		m.focus = focusDetail
+	} else {
+		m.mode = modeInfo
+	}
+	cmd := m.fetchInfo(m.info)
 	if it.MembershipKnown {
-		return meta
+		return cmd
 	}
-	return tea.Batch(meta, m.ensureMembership(m.top(), true))
+	return tea.Batch(cmd, m.ensureMembership(m.top(), true))
+}
+
+func (m *Model) closeInfo() {
+	if m.mode == modeInfo {
+		m.mode = modeNormal
+	}
+	m.focus = focusList
 }
 
 // posterPath picks the most recognisable artwork: the show poster for
@@ -68,13 +143,13 @@ func posterPath(md *plex.Metadata) string {
 	return ""
 }
 
-func (m *Model) loadPoster(md *plex.Metadata) tea.Cmd {
+func (m *Model) loadPoster(in *info, md *plex.Metadata) tea.Cmd {
 	path := posterPath(md)
 	if path == "" {
-		m.info.posterDone = true
+		in.posterDone = true
 		return nil
 	}
-	key := string(md.RatingKey)
+	key := in.item.Key
 	return func() tea.Msg {
 		// Ask for 4× the cell resolution so the box filter has detail to average.
 		data, err := m.cat.C.Image(m.ctx, path, posterCols*4, posterRows*8)
@@ -93,7 +168,7 @@ func (m *Model) infoKey(msg tea.KeyMsg) tea.Cmd {
 	in := m.info
 	switch msg.String() {
 	case "esc", "q", "enter", "h", "left", "i":
-		m.info, m.mode = nil, modeNormal
+		m.closeInfo()
 	case "j", "down":
 		in.scroll++
 	case "k", "up":
@@ -103,9 +178,8 @@ func (m *Model) infoKey(msg tea.KeyMsg) tea.Cmd {
 	case " ":
 		m.setSelected(in.item, !m.isSelected(in.item))
 	case "x", ";":
-		it := m.info.item
-		m.info, m.mode = nil, modeNormal
-		return m.openMenuFor([]*model.Item{it})
+		m.closeInfo()
+		return m.openMenuFor([]*model.Item{in.item})
 	}
 	return nil
 }
@@ -128,15 +202,7 @@ func (m *Model) infoView() string {
 	if m.w < 70 {
 		body = text
 	} else {
-		poster := in.poster
-		if poster == "" {
-			msg := "no artwork"
-			if !in.posterDone {
-				msg = m.spinner.View() + " loading"
-			}
-			poster = lipgloss.Place(posterCols, posterRows, lipgloss.Center, lipgloss.Center, stDim.Render(msg))
-		}
-		body = lipgloss.JoinHorizontal(lipgloss.Top, poster, "   ", text)
+		body = lipgloss.JoinHorizontal(lipgloss.Top, m.posterBlock(in), "   ", text)
 	}
 
 	sel := "select"
@@ -145,6 +211,62 @@ func (m *Model) infoView() string {
 	}
 	footer := renderHints([]hint{{"j/k", "scroll"}, {"space", sel}, {"x", "actions"}, {"esc", "close"}}, boxW-4)
 	return stBox.Width(boxW).Render(body + "\n\n" + footer)
+}
+
+// posterBlock is the poster, or a placeholder of the same size.
+func (m *Model) posterBlock(in *info) string {
+	if in.poster != "" {
+		return in.poster
+	}
+	msg := "no artwork"
+	if !in.posterDone {
+		msg = m.spinner.View() + " loading"
+	}
+	return lipgloss.Place(posterCols, posterRows, lipgloss.Center, lipgloss.Center, stDim.Render(msg))
+}
+
+// detailView renders the details pane as h lines of width w: the poster
+// when there's room, then the details, scrollable when the pane has focus.
+func (m *Model) detailView(w, h int) []string {
+	focused := m.focus == focusDetail
+	lines := []string{paneTitle("DETAILS", w, focused)}
+	pad := func(ls []string) {
+		for _, l := range ls {
+			lines = append(lines, " "+l)
+		}
+	}
+	r, ok := m.top().current()
+	switch {
+	case ok && r.isFolder():
+		pad([]string{
+			cell(icons.folder) + stBold.Render(runewidth.Truncate(r.label, w-4, "…")),
+			"",
+			stDim.Render(fmt.Sprintf("%-11s", "items")) + " " + fmt.Sprint(len(r.under)),
+			stDim.Render(fmt.Sprintf("%-11s", "size")) + " " + field.HumanBytes(r.size),
+			"",
+		})
+		pad(strings.Split(lipgloss.NewStyle().Width(w-2).Render(stDim.Render(r.folder)), "\n"))
+		return lines
+	case m.info == nil:
+		return lines
+	}
+	in := m.info
+	var body []string
+	if w >= posterCols+2 && h >= posterRows+12 {
+		indent := strings.Repeat(" ", (w-2-posterCols)/2)
+		for _, l := range strings.Split(m.posterBlock(in), "\n") {
+			body = append(body, indent+l)
+		}
+		body = append(body, "")
+	}
+	body = append(body, m.infoLines(w-2)...)
+	rows := h - 1
+	if !focused {
+		in.scroll = 0
+	}
+	in.scroll = max(0, min(in.scroll, len(body)-rows))
+	pad(body[in.scroll:min(len(body), in.scroll+rows)])
+	return lines
 }
 
 // infoLines renders the details as wrapped lines for scrolling.
@@ -158,9 +280,16 @@ func (m *Model) infoLines(w int) []string {
 	var b strings.Builder
 	wrap := lipgloss.NewStyle().Width(w)
 	line := func(s string) { b.WriteString(wrap.Render(s) + "\n") }
+	// kv wraps values with a hanging indent so keys stay in their column.
+	const keyW = 12
 	kv := func(k, v string) {
-		if strings.TrimSpace(v) != "" {
-			line(stDim.Render(fmt.Sprintf("%-11s", k)) + " " + v)
+		if strings.TrimSpace(v) == "" {
+			return
+		}
+		vs := strings.Split(lipgloss.NewStyle().Width(max(10, w-keyW)).Render(v), "\n")
+		b.WriteString(stDim.Render(fmt.Sprintf("%-*s", keyW, k)) + vs[0] + "\n")
+		for _, l := range vs[1:] {
+			b.WriteString(strings.Repeat(" ", keyW) + l + "\n")
 		}
 	}
 	tags := func(ts []plex.Tag, n int) string {
@@ -234,7 +363,11 @@ func (m *Model) infoLines(w int) []string {
 		kv("playlists", pl)
 	default:
 		kv("collections", tags(md.Collection, 0))
-		kv("playlists", stDim.Render(m.spinner.View()+" indexing…"))
+		if m.top().indexing {
+			kv("playlists", stDim.Render(m.spinner.View()+" indexing…"))
+		} else {
+			kv("playlists", stDim.Render("enter to look up"))
+		}
 	}
 	b.WriteString("\n")
 

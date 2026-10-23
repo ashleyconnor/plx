@@ -36,13 +36,25 @@ const (
 	modeInfo
 )
 
+// focus is the pane that takes keys.
+type focus int
+
+const (
+	focusSide focus = iota
+	focusList
+	focusDetail
+)
+
 type Model struct {
 	cat *source.Catalog
 	ctx context.Context
 
-	stack []*view
-	w, h  int
-	mode  mode
+	side       *sidebar
+	stack      []*view // the list pane: a source, plus the selection view on top
+	focus      focus
+	hideDetail bool
+	w, h       int
+	mode       mode
 
 	input     textinput.Model // filter and prompt line
 	inputPrev string
@@ -55,9 +67,10 @@ type Model struct {
 	statusAt  time.Time
 
 	menu    *menu
-	info    *info
-	comp    completion // filter autocomplete
-	compSel int        // highlighted suggestion; -1 until ↑/↓ is used
+	info    *info            // the item in the details pane or overlay
+	infos   map[string]*info // details already fetched, by item key
+	comp    completion       // filter autocomplete
+	compSel int              // highlighted suggestion; -1 until ↑/↓ is used
 
 	helpScroll int
 	picker     *picker
@@ -86,14 +99,15 @@ func newModel(c *source.Catalog) *Model {
 	in.Prompt = ""
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
-	m := &Model{cat: c, ctx: context.Background(), input: in, sel: map[string]*model.Item{}, spinner: sp, w: 100, h: 30}
-	m.stack = []*view{m.rootView()}
+	m := &Model{cat: c, ctx: context.Background(), input: in, sel: map[string]*model.Item{}, infos: map[string]*info{}, spinner: sp, w: 100, h: 30}
+	m.side = m.newSidebar()
+	m.stack = []*view{emptyView()}
 	return m
 }
 
 func (m *Model) top() *view { return m.stack[len(m.stack)-1] }
 
-func (m *Model) Init() tea.Cmd { return tea.Batch(m.spinner.Tick, m.load(m.top())) }
+func (m *Model) Init() tea.Cmd { return tea.Batch(m.spinner.Tick, m.sideInit()) }
 
 // --- messages ----------------------------------------------------------------
 
@@ -123,6 +137,9 @@ type statusMsg struct {
 }
 
 func (m *Model) load(v *view) tea.Cmd {
+	if v.placeholder {
+		return nil
+	}
 	if v.selection {
 		v.items, v.stale = m.selected(), false
 		v.rebuild()
@@ -156,6 +173,11 @@ func (m *Model) setStatus(text string, isErr bool) {
 // --- update ------------------------------------------------------------------
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	_, cmd := m.update(msg)
+	return m, tea.Batch(cmd, m.syncInfo())
+}
+
+func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.w, m.h = msg.Width, msg.Height
@@ -171,7 +193,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if v.kind == dirView {
 				v.all = msg.rows
 			} else {
-				v.src, v.items = msg.src, msg.items
+				v.src, v.items, v.fetched = msg.src, msg.items, true
 			}
 			v.rebuild()
 		}
@@ -210,18 +232,32 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, waitFor(m.progCh)
 	case execDoneMsg:
 		return m, m.finished(msg)
+	case sideLoadedMsg:
+		m.sideLoaded(msg)
+		return m, nil
+	case sideTickMsg:
+		if m.focus == focusSide && m.side.current() == msg.n && m.side.active != msg.n {
+			return m, m.openSource(msg.n)
+		}
+		return m, nil
+	case detailTickMsg:
+		if m.info != nil && m.info.item.Key == msg.key {
+			return m, m.fetchInfo(m.info)
+		}
+		return m, nil
 	case infoMsg:
-		if m.info == nil || m.info.item.Key != msg.key {
+		in := m.infos[msg.key]
+		if in == nil {
 			return m, nil
 		}
-		m.info.meta, m.info.err = msg.meta, msg.err
+		in.meta, in.err = msg.meta, msg.err
 		if msg.meta != nil {
-			return m, m.loadPoster(msg.meta)
+			return m, m.loadPoster(in, msg.meta)
 		}
-		return m, m.loadPoster(m.info.item.Raw) // listing has the thumb too
+		return m, m.loadPoster(in, in.item.Raw) // listing has the thumb too
 	case posterMsg:
-		if m.info != nil && m.info.item.Key == msg.key {
-			m.info.poster, m.info.posterDone = msg.art, true
+		if in := m.infos[msg.key]; in != nil {
+			in.poster, in.posterDone = msg.art, true
 		}
 		return m, nil
 	case statusMsg:
@@ -261,17 +297,61 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 	return m.normalKey(msg)
 }
 
+// normalKey handles keys that work in every pane, then passes the rest to
+// the focused pane.
 func (m *Model) normalKey(msg tea.KeyMsg) tea.Cmd {
-	v := m.top()
 	if m.statusErr {
 		m.status = ""
 	}
-	page := max(1, m.listHeight()-1)
 	switch msg.String() {
 	case "q":
 		return tea.Quit
 	case "?":
 		m.mode = modeHelp
+		return nil
+	case "tab":
+		return m.cycleFocus(1)
+	case "shift+tab":
+		return m.cycleFocus(-1)
+	case "p":
+		m.hideDetail = !m.hideDetail
+		if m.hideDetail && m.focus == focusDetail {
+			m.focus = focusList
+		}
+		return nil
+	case "r":
+		return m.refresh()
+	}
+	switch m.focus {
+	case focusSide:
+		return m.sideKey(msg)
+	case focusDetail:
+		return m.infoKey(msg)
+	}
+	return m.listKey(msg)
+}
+
+// cycleFocus moves focus to the next pane on screen.
+func (m *Model) cycleFocus(dir int) tea.Cmd {
+	panes := []focus{focusSide, focusList}
+	if m.layout().detail > 0 && m.info != nil {
+		panes = append(panes, focusDetail)
+	}
+	i := (int(m.focus) + dir + len(panes)) % len(panes)
+	if int(m.focus) >= len(panes) {
+		i = int(focusList)
+	}
+	if panes[i] == focusDetail {
+		return m.showInfo(m.info.item)
+	}
+	m.focus = panes[i]
+	return nil
+}
+
+func (m *Model) listKey(msg tea.KeyMsg) tea.Cmd {
+	v := m.top()
+	page := max(1, m.listHeight()-1)
+	switch msg.String() {
 	case "j", "down":
 		v.cursor++
 	case "k", "up":
@@ -297,7 +377,7 @@ func (m *Model) normalKey(msg tea.KeyMsg) tea.Cmd {
 		return tea.Batch(textinput.Blink, m.updateCompletion())
 	case "i":
 		if r, ok := v.current(); ok && r.item != nil {
-			return m.openInfo(r.item)
+			return m.showInfo(r.item)
 		}
 	case "esc":
 		if v.filterText != "" {
@@ -331,8 +411,6 @@ func (m *Model) normalKey(msg tea.KeyMsg) tea.Cmd {
 		return m.openMenu()
 	case "S":
 		return m.promptSaveQuery()
-	case "r":
-		return m.refresh()
 	}
 	v.clamp()
 	return nil
@@ -353,7 +431,7 @@ func (m *Model) open() tea.Cmd {
 		v.folder, v.cursor = r.folder, 0
 		v.rebuild()
 	case r.item != nil:
-		return m.openInfo(r.item)
+		return m.showInfo(r.item)
 	}
 	return nil
 }
@@ -372,6 +450,7 @@ func (m *Model) back() tea.Cmd {
 		return nil
 	}
 	if len(m.stack) == 1 {
+		m.focus = focusSide
 		return nil
 	}
 	m.stack = m.stack[:len(m.stack)-1]
@@ -381,13 +460,17 @@ func (m *Model) back() tea.Cmd {
 	return nil
 }
 
-func (m *Model) refresh() tea.Cmd {
-	v := m.top()
+func (m *Model) refresh() tea.Cmd { return m.invalidate() }
+
+// invalidate drops everything cached after the server's data changed and
+// reloads what's on screen.
+func (m *Model) invalidate() tea.Cmd {
 	m.cat.Invalidate()
 	for _, sv := range m.stack {
 		sv.stale = true
 	}
-	return m.load(v)
+	m.infos, m.info = map[string]*info{}, nil
+	return tea.Batch(m.reloadSide(), m.load(m.top()))
 }
 
 // Filter keys: tab completes the highlighted suggestion, ↑/↓ choose one
@@ -619,6 +702,7 @@ func (m *Model) viewSelection() tea.Cmd {
 	}
 	v := &view{kind: itemView, title: icons.selection + " Selection", selection: true, columns: defaultColumns()}
 	m.stack = append(m.stack, v)
+	m.focus = focusList
 	return m.load(v)
 }
 

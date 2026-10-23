@@ -21,7 +21,7 @@ import (
 
 func (m *Model) rootView() *view {
 	dir := func(icon, label, detail string, push func() *view) row {
-		return row{icon: icon, label: label + "/", detail: detail, push: push}
+		return row{icon: icon, label: label + "/", detail: detail, push: push, expand: detail != "by library"}
 	}
 	return &view{kind: dirView, title: "plx", loader: func(context.Context) ([]row, error) {
 		return []row{
@@ -77,7 +77,7 @@ func (m *Model) playlistsView() *view {
 		}
 		var rows []row
 		for _, p := range pls {
-			rows = append(rows, row{icon: icons.playlist, label: p.Title + "/", detail: containerDetail(p), push: func() *view {
+			rows = append(rows, row{icon: icons.playlist, label: p.Title + "/", detail: containerDetail(p), badge: fmt.Sprint(p.Count), push: func() *view {
 				return m.itemsView(source.Members{C: p}, nil)
 			}})
 		}
@@ -107,7 +107,7 @@ func (m *Model) collectionsView(s source.Section) *view {
 		}
 		var rows []row
 		for _, c := range cs {
-			rows = append(rows, row{icon: icons.collection, label: c.Title + "/", detail: containerDetail(c), push: func() *view {
+			rows = append(rows, row{icon: icons.collection, label: c.Title + "/", detail: containerDetail(c), badge: fmt.Sprint(c.Count), push: func() *view {
 				return m.itemsView(source.Members{C: c}, nil)
 			}})
 		}
