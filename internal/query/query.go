@@ -152,6 +152,27 @@ func wordTerm(neg bool, w string) Term {
 	}}
 }
 
+// Uses reports whether any term or sort key refers to one of the fields.
+func (q *Query) Uses(fs ...*field.Field) bool {
+	for _, f := range fs {
+		for _, t := range q.Terms {
+			if t.Field == f {
+				return true
+			}
+		}
+		for _, k := range q.Sort {
+			if k.Field == f {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// UsesMembership reports whether the query needs collection/playlist
+// membership, which is indexed on demand.
+func (q *Query) UsesMembership() bool { return q.Uses(field.Collection, field.Playlist) }
+
 func (q *Query) Match(it *model.Item) bool {
 	for i := range q.Terms {
 		if q.Terms[i].match(it) == q.Terms[i].Neg {

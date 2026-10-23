@@ -95,7 +95,9 @@ func (m *Model) breadcrumb() string {
 
 func (m *Model) header(v *view) string {
 	right := ""
-	if v.kind == itemView && !v.loading {
+	if v.kind == itemView && v.indexing && v.filter != nil && v.filter.UsesMembership() {
+		right = fmt.Sprintf("…/%d", len(v.items))
+	} else if v.kind == itemView && !v.loading {
 		vis := v.visible()
 		right = fmt.Sprintf("%d/%d · %s", len(vis), len(v.items), humanSize(vis))
 	}
@@ -126,6 +128,9 @@ func (m *Model) filterLine(v *view) string {
 	}
 	if c := v.container(); c != nil && c.Smart {
 		parts = append(parts, stWarn.Render("smart "+c.Kind.String()+": read-only"))
+	}
+	if v.indexing {
+		parts = append(parts, stWarn.Render(m.spinner.View()+" indexing collections & playlists…"))
 	}
 	return stDim.Render(runewidth.Truncate(strings.Join(parts, "   "), m.w, "…"))
 }
@@ -179,6 +184,8 @@ func (m *Model) list(v *view) string {
 	switch {
 	case v.loading:
 		lines = append(lines, "  "+m.spinner.View()+" loading…")
+	case v.indexing && len(v.rows) == 0:
+		lines = append(lines, "  "+m.spinner.View()+" indexing collections & playlists…")
 	case v.err != nil:
 		lines = append(lines, "  "+stErr.Render(v.err.Error()), "  "+stDim.Render("r to retry, h to go back"))
 	case len(v.rows) == 0:

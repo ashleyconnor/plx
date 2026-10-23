@@ -175,6 +175,22 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			v.rebuild()
 		}
+		return m, m.ensureMembership(v, false)
+	case membershipMsg:
+		msg.v.indexing = false
+		if msg.err != nil {
+			m.setStatus("indexing collections and playlists: "+msg.err.Error(), true)
+			msg.v.rebuild()
+			return m, nil
+		}
+		m.cat.ApplyMembership(msg.items)
+		if m.info != nil {
+			m.cat.ApplyMembership([]*model.Item{m.info.item})
+		}
+		msg.v.rebuild()
+		if m.mode == modeFilter && msg.v == m.top() {
+			return m, m.updateCompletion()
+		}
 		return m, nil
 	case planMsg:
 		if msg.err != nil {
@@ -277,8 +293,7 @@ func (m *Model) normalKey(msg tea.KeyMsg) tea.Cmd {
 		m.input.CursorEnd()
 		m.input.Focus()
 		m.mode = modeFilter
-		m.updateCompletion()
-		return textinput.Blink
+		return tea.Batch(textinput.Blink, m.updateCompletion())
 	case "i":
 		if r, ok := v.current(); ok && r.item != nil {
 			return m.openInfo(r.item)
@@ -382,7 +397,7 @@ func (m *Model) filterKey(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "tab":
 		if n > 0 {
-			m.acceptCompletion(max(m.compSel, 0))
+			return m.acceptCompletion(max(m.compSel, 0))
 		}
 		return nil
 	case "down", "ctrl+n":
@@ -397,8 +412,7 @@ func (m *Model) filterKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "enter":
 		if m.compSel >= 0 && n > 0 {
-			m.acceptCompletion(m.compSel)
-			return nil
+			return m.acceptCompletion(m.compSel)
 		}
 		m.mode = modeNormal
 		m.input.Blur()
@@ -416,29 +430,64 @@ func (m *Model) filterKey(msg tea.KeyMsg) tea.Cmd {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	v.setFilter(m.input.Value())
-	m.updateCompletion()
-	return cmd
+	return tea.Batch(cmd, m.updateCompletion())
 }
 
-func (m *Model) updateCompletion() {
+// updateCompletion recomputes suggestions. Completing collection or
+// playlist values starts indexing membership if it isn't known yet.
+func (m *Model) updateCompletion() tea.Cmd {
 	v := m.top()
 	if v.kind != itemView {
 		m.comp = completion{}
-		return
+		return nil
 	}
 	val := m.input.Value()
 	m.comp = complete(val[:min(m.input.Position(), len(val))], v.items)
 	m.compSel = -1
+	f := m.comp.field
+	return m.ensureMembership(v, f == field.Collection || f == field.Playlist)
 }
 
-func (m *Model) acceptCompletion(i int) {
+func (m *Model) acceptCompletion(i int) tea.Cmd {
 	val := m.input.Value()
 	pos := min(m.input.Position(), len(val))
 	head := val[:m.comp.start] + m.comp.sugs[i].insert
 	m.input.SetValue(head + val[pos:])
 	m.input.SetCursor(len(head))
 	m.top().setFilter(m.input.Value())
-	m.updateCompletion()
+	return m.updateCompletion()
+}
+
+type membershipMsg struct {
+	v     *view
+	items []*model.Item
+	err   error
+}
+
+// ensureMembership indexes collection and playlist membership for a view's
+// items when something needs it: the filter, sort or columns use those
+// fields, or force (autocomplete, info) asks. It costs a request per
+// collection and playlist, so it never runs just because a list loaded.
+func (m *Model) ensureMembership(v *view, force bool) tea.Cmd {
+	if v.kind != itemView || v.indexing || v.loading || !source.NeedsMembership(v.items) {
+		return nil
+	}
+	need := force || (v.filter != nil && v.filter.UsesMembership())
+	for _, k := range v.sortKeys {
+		need = need || k.Field == field.Collection || k.Field == field.Playlist
+	}
+	for _, c := range v.columns {
+		need = need || c == field.Collection || c == field.Playlist
+	}
+	if !need {
+		return nil
+	}
+	v.indexing = true
+	v.rebuild() // hide results that depend on membership until it's known
+	items := v.items
+	return func() tea.Msg {
+		return membershipMsg{v: v, items: items, err: m.cat.BuildMembership(m.ctx, items)}
+	}
 }
 
 // sortChoices are the one-key sorts; numeric fields default to descending.

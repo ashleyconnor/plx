@@ -109,6 +109,11 @@ func printQuery(ctx context.Context, cat *source.Catalog, ref, q string) error {
 	if err != nil {
 		return err
 	}
+	if pq.UsesMembership() {
+		if err := cat.EnsureMembership(ctx, items); err != nil {
+			return err
+		}
+	}
 	matched := pq.Filter(items)
 	cols := []*field.Field{field.Size, field.Dur, field.Res, field.Plays, field.Label}
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)

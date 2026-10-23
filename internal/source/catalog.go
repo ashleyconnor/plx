@@ -216,21 +216,12 @@ func (c *Catalog) enrich(ctx context.Context, items []*model.Item) error {
 		if err := c.ensureLabels(ctx, s); err != nil {
 			return err
 		}
-		if err := c.ensureCollections(ctx, s); err != nil {
-			return err
-		}
-	}
-	if err := c.ensurePlaylists(ctx); err != nil {
-		return err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, it := range items {
-		// Labels and collections can be set on a show or season; episodes inherit them.
-		up := []string{it.Key, it.ShowKey, it.SeasonKey}
-		it.Labels = gather(c.labelIdx[it.SectionID], up)
-		it.Collections = gather(c.collIdx[it.SectionID], up)
-		it.Playlists = gather(c.plIdx, []string{it.Key})
+		// Labels can be set on a show or season; episodes inherit them.
+		it.Labels = gather(c.labelIdx[it.SectionID], []string{it.Key, it.ShowKey, it.SeasonKey})
 	}
 	return nil
 }

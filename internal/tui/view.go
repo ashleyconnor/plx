@@ -59,6 +59,7 @@ type view struct {
 	cursor, offset int
 
 	selection bool // the selection, not a source
+	indexing  bool // collection/playlist membership is being indexed
 
 	loading, stale bool
 	err            error
@@ -111,6 +112,8 @@ func (v *view) rebuild() {
 				v.rows = append(v.rows, r)
 			}
 		}
+	} else if v.indexing && v.filter != nil && v.filter.UsesMembership() {
+		v.rows = nil // results would be wrong until membership is indexed
 	} else {
 		items := v.visible()
 		if v.lens {

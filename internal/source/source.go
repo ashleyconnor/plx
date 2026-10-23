@@ -104,5 +104,10 @@ func (s Saved) load(ctx context.Context, c *Catalog) ([]*model.Item, error) {
 			}
 		}
 	}
+	if s.Query.UsesMembership() {
+		if err := c.EnsureMembership(ctx, all); err != nil {
+			return nil, err
+		}
+	}
 	return s.Query.Filter(all), nil
 }

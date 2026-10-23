@@ -10,7 +10,58 @@ import (
 
 // Plex can't say which collections or playlists an item is in (section
 // listings carry collection tags only sometimes), so membership is indexed
-// by listing every collection and playlist.
+// by listing every collection and playlist. That costs a request per
+// container, so it is done on demand, not when sources load.
+
+// NeedsMembership reports whether items lack collection/playlist membership.
+func NeedsMembership(items []*model.Item) bool {
+	for _, it := range items {
+		if !it.MembershipKnown {
+			return true
+		}
+	}
+	return false
+}
+
+// EnsureMembership fills in Collections and Playlists on items, building
+// the indexes for their sections first if needed.
+func (c *Catalog) EnsureMembership(ctx context.Context, items []*model.Item) error {
+	if err := c.BuildMembership(ctx, items); err != nil {
+		return err
+	}
+	c.ApplyMembership(items)
+	return nil
+}
+
+// BuildMembership builds the indexes items need without touching the items,
+// so it can run in the background while a UI reads them.
+func (c *Catalog) BuildMembership(ctx context.Context, items []*model.Item) error {
+	secs := map[string]bool{}
+	for _, it := range items {
+		if it.SectionID != "" && !it.MembershipKnown {
+			secs[it.SectionID] = true
+		}
+	}
+	for s := range secs {
+		if err := c.ensureCollections(ctx, s); err != nil {
+			return err
+		}
+	}
+	return c.ensurePlaylists(ctx)
+}
+
+// ApplyMembership copies indexed membership onto items. Items in sections
+// that haven't been indexed get empty membership, so build first.
+func (c *Catalog) ApplyMembership(items []*model.Item) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	for _, it := range items {
+		// Collections can hold a show or season; episodes inherit them.
+		it.Collections = gather(c.collIdx[it.SectionID], []string{it.Key, it.ShowKey, it.SeasonKey})
+		it.Playlists = gather(c.plIdx, []string{it.Key})
+		it.MembershipKnown = true
+	}
+}
 
 // fetchParallel is how many container listings are fetched at once.
 const fetchParallel = 8

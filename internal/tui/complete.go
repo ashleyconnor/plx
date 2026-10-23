@@ -18,7 +18,8 @@ type suggestion struct {
 type completion struct {
 	start int
 	sugs  []suggestion
-	hint  string // what the field under the cursor means
+	hint  string       // what the field under the cursor means
+	field *field.Field // the field whose value is being completed, if any
 }
 
 var compOpRe = regexp.MustCompile(`^([A-Za-z_]+)(:|!=|>=|<=|=|>|<)(.*)$`)
@@ -96,6 +97,7 @@ func complete(text string, items []*model.Item) completion {
 		return c
 	}
 	c.hint = f.Name + ": " + f.Doc
+	c.field = f
 	if !f.Enum {
 		return c
 	}

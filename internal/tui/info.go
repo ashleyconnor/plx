@@ -40,10 +40,14 @@ type posterMsg struct {
 
 func (m *Model) openInfo(it *model.Item) tea.Cmd {
 	m.info, m.mode = &info{item: it}, modeInfo
-	return func() tea.Msg {
+	meta := func() tea.Msg {
 		meta, err := m.cat.C.Metadata(m.ctx, it.Key)
 		return infoMsg{key: it.Key, meta: meta, err: err}
 	}
+	if it.MembershipKnown {
+		return meta
+	}
+	return tea.Batch(meta, m.ensureMembership(m.top(), true))
 }
 
 // posterPath picks the most recognisable artwork: the show poster for
@@ -219,7 +223,18 @@ func (m *Model) infoLines(w int) []string {
 		labels = tags(md.Label, 0)
 	}
 	kv("labels", labels)
-	kv("collections", tags(md.Collection, 0))
+	switch {
+	case it.MembershipKnown:
+		kv("collections", strings.Join(it.Collections, ", "))
+		pl := strings.Join(it.Playlists, ", ")
+		if pl == "" {
+			pl = stDim.Render("none")
+		}
+		kv("playlists", pl)
+	default:
+		kv("collections", tags(md.Collection, 0))
+		kv("playlists", stDim.Render(m.spinner.View()+" indexing…"))
+	}
 	b.WriteString("\n")
 
 	watch := "unwatched"

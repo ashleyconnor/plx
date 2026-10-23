@@ -62,6 +62,9 @@ type Item struct {
 	Genres      []string
 	Collections []string // titles of collections containing the item (or its show/season)
 	Playlists   []string // titles of playlists containing the item
+	// MembershipKnown is set once Collections and Playlists are filled in;
+	// they are indexed on demand (see source.Catalog.EnsureMembership).
+	MembershipKnown bool
 
 	// MemberID identifies the item inside the container it was listed from:
 	// playlistItemID for playlists, ratingKey for collections. Empty otherwise.
