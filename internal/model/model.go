@@ -39,6 +39,7 @@ type Item struct {
 	SortTitle string
 	Show      string // grandparent title for episodes, artist for tracks
 	ShowKey   string
+	SeasonKey string
 	Season    string
 	SeasonNum int
 	Index     int // episode / track number
@@ -57,8 +58,10 @@ type Item struct {
 	LastViewed time.Time
 	Added      time.Time
 
-	Labels []string
-	Genres []string
+	Labels      []string
+	Genres      []string
+	Collections []string // titles of collections containing the item (or its show/season)
+	Playlists   []string // titles of playlists containing the item
 
 	// MemberID identifies the item inside the container it was listed from:
 	// playlistItemID for playlists, ratingKey for collections. Empty otherwise.
@@ -117,6 +120,7 @@ func FromPlex(m *plex.Metadata) *Item {
 		SortTitle:    m.TitleSort,
 		Show:         m.GrandparentTitle,
 		ShowKey:      string(m.GrandparentKey),
+		SeasonKey:    string(m.ParentKey),
 		Season:       m.ParentTitle,
 		SeasonNum:    int(m.ParentIndex),
 		Index:        int(m.Index),

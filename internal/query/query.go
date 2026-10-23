@@ -323,7 +323,7 @@ func compileString(f *field.Field, op string, vals []string) (func(*model.Item) 
 // List fields match if any element matches. Labels and genres match whole
 // values; paths match substrings.
 func compileList(f *field.Field, op string, vals []string) (func(*model.Item) bool, error) {
-	contains := f != field.Label && f != field.Genre
+	contains := f == field.Path // tags match whole values; paths match substrings
 	var preds []func(*model.Item) bool
 	for _, v := range vals {
 		m, err := strMatcher(op, v, contains)

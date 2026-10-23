@@ -31,10 +31,13 @@ type Catalog struct {
 	items     map[string][]*model.Item       // by source ID
 	labelIdx  map[string]map[string][]string // section ID → ratingKey → labels
 	labelList map[string][]string            // section ID → label names
+	collIdx   map[string]map[string][]string // section ID → ratingKey → collection titles
+	plIdx     map[string][]string            // ratingKey → playlist titles; nil until built
 }
 
 func NewCatalog(c *plex.Client) *Catalog {
-	return &Catalog{C: c, items: map[string][]*model.Item{}, labelIdx: map[string]map[string][]string{}, labelList: map[string][]string{}}
+	return &Catalog{C: c, items: map[string][]*model.Item{}, labelIdx: map[string]map[string][]string{},
+		labelList: map[string][]string{}, collIdx: map[string]map[string][]string{}}
 }
 
 func (c *Catalog) MachineID(ctx context.Context) (string, error) {
@@ -213,24 +216,40 @@ func (c *Catalog) enrich(ctx context.Context, items []*model.Item) error {
 		if err := c.ensureLabels(ctx, s); err != nil {
 			return err
 		}
+		if err := c.ensureCollections(ctx, s); err != nil {
+			return err
+		}
+	}
+	if err := c.ensurePlaylists(ctx); err != nil {
+		return err
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, it := range items {
-		idx := c.labelIdx[it.SectionID]
-		if idx == nil {
-			continue
-		}
-		labels := append([]string(nil), idx[it.Key]...)
-		for _, l := range idx[it.ShowKey] {
-			if !contains(labels, l) {
-				labels = append(labels, l)
-			}
-		}
-		sort.Strings(labels)
-		it.Labels = labels
+		// Labels and collections can be set on a show or season; episodes inherit them.
+		up := []string{it.Key, it.ShowKey, it.SeasonKey}
+		it.Labels = gather(c.labelIdx[it.SectionID], up)
+		it.Collections = gather(c.collIdx[it.SectionID], up)
+		it.Playlists = gather(c.plIdx, []string{it.Key})
 	}
 	return nil
+}
+
+// gather unions idx[k] over keys, sorted and deduplicated.
+func gather(idx map[string][]string, keys []string) []string {
+	var out []string
+	for _, k := range keys {
+		if k == "" {
+			continue
+		}
+		for _, v := range idx[k] {
+			if !contains(out, v) {
+				out = append(out, v)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func contains(ss []string, s string) bool {
@@ -277,6 +296,8 @@ func (c *Catalog) Invalidate(ids ...string) {
 	}
 	c.labelIdx = map[string]map[string][]string{}
 	c.labelList = map[string][]string{}
+	c.collIdx = map[string]map[string][]string{}
+	c.plIdx = nil
 }
 
 func convert(ms []plex.Metadata, memberID func(*plex.Metadata) string) []*model.Item {

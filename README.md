@@ -53,6 +53,8 @@ label:keep,fav              either label
 -label:trash                negate any term
 has:label  -has:label       has any label / has none
 labelcount:1 label:keep     keep is the only label
+-has:collection -has:playlist   in no collection or playlist
+playlist:"Watch later"      in that playlist (collection: likewise)
 is:watched  -is:watched     yes/no fields
 path:/tv/anime/             substring at any depth; path:/tv/*/S01/* glob
 added<30d  viewed>1y        relative ages; added>2024-01-01 absolute dates

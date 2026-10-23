@@ -48,6 +48,10 @@ var (
 		List: func(i *model.Item) []string { return i.Labels }})
 	LabelCount = register(&Field{Name: "labelcount", Aliases: []string{"nlabels"}, Type: Int, Doc: "number of labels (labelcount:1 label:keep = only keep)",
 		Num: func(i *model.Item) int64 { return int64(len(i.Labels)) }})
+	Collection = register(&Field{Enum: true, Name: "collection", Aliases: []string{"collections"}, Type: List, Doc: "collections containing the item (-has:collection = in none)",
+		List: func(i *model.Item) []string { return i.Collections }})
+	Playlist = register(&Field{Enum: true, Name: "playlist", Aliases: []string{"playlists"}, Type: List, Doc: "playlists containing the item (-has:playlist = in none)",
+		List: func(i *model.Item) []string { return i.Playlists }})
 	Genre = register(&Field{Enum: true, Name: "genre", Type: List, Doc: "genres (movies)",
 		List: func(i *model.Item) []string { return i.Genres }})
 

@@ -43,6 +43,7 @@ type Metadata struct {
 	ParentTitle         string     `json:"parentTitle"`
 	GrandparentTitle    string     `json:"grandparentTitle"`
 	GrandparentKey      FlexString `json:"grandparentRatingKey"`
+	ParentKey           FlexString `json:"parentRatingKey"`
 	ParentIndex         FlexInt    `json:"parentIndex"`
 	Index               FlexInt    `json:"index"`
 	Year                FlexInt    `json:"year"`
