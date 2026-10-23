@@ -22,7 +22,7 @@ type completion struct {
 	field *field.Field // the field whose value is being completed, if any
 }
 
-var compOpRe = regexp.MustCompile(`^([A-Za-z_]+)(:|!=|>=|<=|=|>|<)(.*)$`)
+var compOpRe = regexp.MustCompile(`^([A-Za-z_]+(?:\.(?:min|max))?)(:|!=|>=|<=|=|>|<)(.*)$`)
 
 const maxSuggestions = 50
 

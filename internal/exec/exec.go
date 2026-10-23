@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/ashleyconnor/plx/internal/field"
 	"github.com/ashleyconnor/plx/internal/model"
 	"github.com/ashleyconnor/plx/internal/plan"
 	"github.com/ashleyconnor/plx/internal/plex"
@@ -35,7 +36,7 @@ func Steps(p *plan.Plan) int {
 	n := 0
 	for _, op := range p.Ops {
 		switch op.Kind {
-		case plan.OpRemove, plan.OpDelete:
+		case plan.OpRemove, plan.OpDelete, plan.OpDeleteVersion:
 			n += len(op.Items)
 		default:
 			n++
@@ -109,6 +110,16 @@ func (e *Executor) apply(ctx context.Context, op plan.Op, step func(string)) (st
 				err = fmt.Errorf("can't remove from a %s", op.Target.Kind)
 			}
 			step(fmt.Sprintf("remove %q from %s", it.DisplayTitle(), op.Target))
+			if err != nil {
+				return "", err
+			}
+		}
+		return "", nil
+	case plan.OpDeleteVersion:
+		for i, it := range op.Items {
+			v := op.Versions[i]
+			err := e.C.DeleteMedia(ctx, it.Key, v.MediaID)
+			step(fmt.Sprintf("delete %s version of %q", field.HumanDuration(v.Duration), it.DisplayTitle()))
 			if err != nil {
 				return "", err
 			}

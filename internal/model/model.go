@@ -6,6 +6,7 @@ package model
 import (
 	"fmt"
 	"path"
+	"sort"
 	"time"
 
 	"github.com/ashleyconnor/plx/internal/plex"
@@ -45,6 +46,9 @@ type Item struct {
 	Index     int // episode / track number
 	Year      int
 
+	// Size is the disk usage of all versions. Duration, bitrate, resolution,
+	// codec and container describe the primary (longest) version; Versions
+	// has each one.
 	Size       int64
 	Duration   time.Duration
 	Bitrate    int // kbps
@@ -52,6 +56,7 @@ type Item struct {
 	VideoCodec string
 	Container  string
 	Files      []string
+	Versions   []Version
 
 	ViewCount  int
 	ViewOffset time.Duration
@@ -71,6 +76,39 @@ type Item struct {
 	MemberID string
 
 	Raw *plex.Metadata
+}
+
+// Version is one Plex Media entry: an alternative copy of the item, such
+// as a 4K and a 1080p file, or a stray Sample.mkv.
+type Version struct {
+	MediaID    string
+	Duration   time.Duration
+	Size       int64
+	Bitrate    int
+	Resolution string
+	VideoCodec string
+	Container  string
+	Files      []string
+}
+
+// Primary is the longest version (ties go to the largest), so a sample
+// never stands in for the movie.
+func (i *Item) Primary() *Version {
+	var best *Version
+	for k := range i.Versions {
+		v := &i.Versions[k]
+		if best == nil || v.Duration > best.Duration || (v.Duration == best.Duration && v.Size > best.Size) {
+			best = v
+		}
+	}
+	return best
+}
+
+// ByDuration returns the versions shortest first.
+func (i *Item) ByDuration() []Version {
+	vs := append([]Version(nil), i.Versions...)
+	sort.SliceStable(vs, func(a, b int) bool { return vs[a].Duration < vs[b].Duration })
+	return vs
 }
 
 func (i *Item) Watched() bool    { return i.ViewCount > 0 }
@@ -143,13 +181,22 @@ func FromPlex(m *plex.Metadata) *Item {
 	}
 	seen := map[string]bool{}
 	for _, md := range m.Media {
-		if it.Bitrate == 0 {
-			it.Bitrate = int(md.Bitrate)
-			it.Resolution = md.VideoResolution
-			it.VideoCodec = md.VideoCodec
-			it.Container = md.Container
+		v := Version{
+			MediaID:    fmt.Sprint(int64(md.ID)),
+			Duration:   time.Duration(md.Duration) * time.Millisecond,
+			Bitrate:    int(md.Bitrate),
+			Resolution: md.VideoResolution,
+			VideoCodec: md.VideoCodec,
+			Container:  md.Container,
 		}
 		for _, p := range md.Part {
+			v.Size += int64(p.Size)
+			if p.File != "" {
+				v.Files = append(v.Files, p.File)
+			}
+			if v.Duration == 0 {
+				v.Duration += time.Duration(p.Duration) * time.Millisecond
+			}
 			if seen[p.File] {
 				continue
 			}
@@ -159,6 +206,15 @@ func FromPlex(m *plex.Metadata) *Item {
 				it.Files = append(it.Files, p.File)
 			}
 		}
+		it.Versions = append(it.Versions, v)
+	}
+	// Plex reports the item's duration from whichever version it lists
+	// first, which may be a sample; use the primary version instead.
+	if p := it.Primary(); p != nil {
+		if p.Duration > 0 {
+			it.Duration = p.Duration
+		}
+		it.Bitrate, it.Resolution, it.VideoCodec, it.Container = p.Bitrate, p.Resolution, p.VideoCodec, p.Container
 	}
 	for _, t := range m.Label {
 		it.Labels = append(it.Labels, t.Tag)

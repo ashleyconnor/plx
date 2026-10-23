@@ -43,6 +43,13 @@ type Field struct {
 	Num  func(*model.Item) int64    // Int, Bytes, Duration (ns), Time (unix s; 0 = never)
 	Bool func(*model.Item) bool     // Bool
 
+	// Per-version fields. For numbers, Num is the largest value across an
+	// item's versions and Min the smallest (a "<name>.min" field is
+	// registered for filtering on it). For text, Strs has every version's
+	// value, shortest version first, and a filter matches any of them.
+	Min  func(*model.Item) int64
+	Strs func(*model.Item) []string
+
 	Width int // column width; 0 = not shown as a column by default
 
 	// Enum marks fields with a small set of values worth suggesting in
@@ -50,8 +57,30 @@ type Field struct {
 	Enum bool
 }
 
-// Format renders the field's value for display.
+// Format renders the field's value for display. When versions differ it
+// shows them all, shortest first: "2m|2h30m".
 func (f *Field) Format(it *model.Item) string {
+	if f.Min != nil && len(it.Versions) > 1 {
+		lo, hi := f.formatNum(f.Min(it)), f.formatNum(f.Num(it))
+		if lo != hi { // compare as shown: 1h21m and 1h21m+4s are the same here
+			return lo + "|" + hi
+		}
+	}
+	if f.Strs != nil {
+		var out []string
+		for _, s := range f.Strs(it) {
+			if s != "" && (len(out) == 0 || out[len(out)-1] != s) {
+				out = append(out, s)
+			}
+		}
+		if len(out) > 1 {
+			return strings.Join(out, "|")
+		}
+	}
+	switch f.Type {
+	case Int, Bytes, Duration:
+		return f.formatNum(f.Num(it))
+	}
 	switch f.Type {
 	case String:
 		return f.Str(it)
@@ -82,6 +111,19 @@ func (f *Field) Format(it *model.Item) string {
 	return ""
 }
 
+func (f *Field) formatNum(n int64) string {
+	switch f.Type {
+	case Bytes:
+		return HumanBytes(n)
+	case Duration:
+		return HumanDuration(time.Duration(n))
+	}
+	if n == 0 {
+		return ""
+	}
+	return fmt.Sprint(n)
+}
+
 // SortKey returns a comparable value: int64 for numeric/bool fields, a
 // lower-cased string otherwise.
 func (f *Field) SortKey(it *model.Item) any {
@@ -105,6 +147,18 @@ var (
 )
 
 func register(f *Field) *Field {
+	if f.Min != nil {
+		// "duration.max" is the plain field; "duration.min" filters on the
+		// smallest version.
+		min := &Field{Name: f.Name + ".min", Type: f.Type, Num: f.Min, Doc: "smallest across versions: " + f.Doc}
+		base := f.Aliases
+		for _, a := range base {
+			min.Aliases = append(min.Aliases, a+".min")
+			f.Aliases = append(f.Aliases, a+".max")
+		}
+		f.Aliases = append(f.Aliases, f.Name+".max")
+		defer register(min)
+	}
 	for _, n := range append([]string{f.Name}, f.Aliases...) {
 		if _, dup := byName[n]; dup {
 			panic("field: duplicate name " + n)

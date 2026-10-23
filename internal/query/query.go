@@ -336,6 +336,21 @@ func compileString(f *field.Field, op string, vals []string) (func(*model.Item) 
 		if err != nil {
 			return nil, err
 		}
+		if f.Strs != nil { // per-version field: any version matches
+			preds = append(preds, func(it *model.Item) bool {
+				vs := f.Strs(it)
+				if len(vs) == 0 {
+					return m(f.Str(it))
+				}
+				for _, s := range vs {
+					if m(s) {
+						return true
+					}
+				}
+				return false
+			})
+			continue
+		}
 		preds = append(preds, func(it *model.Item) bool { return m(f.Str(it)) })
 	}
 	return anyOf(preds), nil
@@ -570,7 +585,7 @@ func tokenize(s string) ([]token, error) {
 	return toks, nil
 }
 
-var opRe = regexp.MustCompile(`^([A-Za-z_]+)(:|!=|>=|<=|=|>|<)(.*)$`)
+var opRe = regexp.MustCompile(`^([A-Za-z_]+(?:\.(?:min|max))?)(:|!=|>=|<=|=|>|<)(.*)$`)
 
 // splitOp splits "size>4G" into name, operator and value. GitHub-style
 // "size:>4G" is accepted as the same thing.

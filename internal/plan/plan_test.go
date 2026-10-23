@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ashleyconnor/plx/internal/model"
 )
@@ -196,5 +197,39 @@ func TestDelete(t *testing.T) {
 	}
 	if p.Title != "Delete 2 items (2 files, 3.0G) from disk" {
 		t.Errorf("title = %q", p.Title)
+	}
+}
+
+func TestDeleteVersions(t *testing.T) {
+	v := func(id string, mins int, file string) model.Version {
+		return model.Version{MediaID: id, Duration: time.Duration(mins) * time.Minute, Size: int64(mins), Files: []string{file}}
+	}
+	withSample := &model.Item{Key: "1", Title: "a", Versions: []model.Version{v("s", 2, "/a/Sample.mkv"), v("m", 120, "/a/a.mkv")}}
+	single := &model.Item{Key: "2", Title: "b", Versions: []model.Version{v("x", 90, "/b/b.mkv")}}
+	twoEncodes := &model.Item{Key: "4", Title: "d", Versions: []model.Version{v("e1", 101, "/d/1.mkv"), v("e2", 102, "/d/2.mkv")}}
+	sharedFile := &model.Item{Key: "3", Title: "c", Versions: []model.Version{v("p", 100, "/c/c.mkv"), v("q", 101, "/c/c.mkv")}}
+
+	p := DeleteVersions([]*model.Item{withSample, single, sharedFile, twoEncodes}, Picks[0], true)
+	if p.Blocked() || !p.Destructive() {
+		t.Fatalf("plan = %+v", p)
+	}
+	op := p.Ops[0]
+	if len(op.Versions) != 1 || op.Versions[0].MediaID != "s" {
+		t.Errorf("deleting %+v, want only the sample", op.Versions)
+	}
+	got := strings.Join(p.SkipSummary(), "; ")
+	want := "1 × only one version; 2 × no " + Picks[0].Name // sharedFile and twoEncodes
+	if got != want {
+		t.Errorf("skips = %q, want %q", got, want)
+	}
+	// a shared file is protected even when the version is explicitly picked
+	if p := DeleteVersions([]*model.Item{sharedFile}, PickMedia("p"), true); !p.Blocked() || len(p.Skipped) != 1 {
+		t.Errorf("deleting a version sharing a kept file: %+v", p)
+	}
+	if !DeleteVersions([]*model.Item{withSample}, Picks[0], false).Blocked() {
+		t.Error("allowed without server permission")
+	}
+	if p := DeleteVersions([]*model.Item{withSample}, PickMedia("m"), true); p.Ops[0].Versions[0].MediaID != "m" {
+		t.Error("PickMedia picked the wrong version")
 	}
 }

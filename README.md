@@ -54,6 +54,18 @@ label:keep,fav              either label
 has:label  -has:label       has any label / has none
 labelcount:1 label:keep     keep is the only label
 -has:collection -has:playlist   in no collection or playlist
+versions>1                  has more than one version (duplicates, samples)
+dur.min<5m                  has a short version, e.g. a Sample.mkv
+```
+
+Items with several versions show each value, shortest version first:
+`2m|2h08m`, `358.6M|22.7G`, `1080|4k`. Numeric fields filter and sort on the
+largest version (`dur`, `size`, `bitrate`; append `.min` for the smallest),
+text fields (`res`, `codec`, `container`) match any version, and
+`totalsize` is the disk used by all of them. `x` → `V` deletes a chosen
+version, or the samples of every selected item.
+
+```
 playlist:"Watch later"      in that playlist (collection: likewise)
 is:watched  -is:watched     yes/no fields
 path:/tv/anime/             substring at any depth; path:/tv/*/S01/* glob

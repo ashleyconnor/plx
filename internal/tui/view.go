@@ -56,6 +56,7 @@ type view struct {
 	folder     string
 
 	rows           []row
+	widths         map[*field.Field]int // column widths fitted to rows
 	cursor, offset int
 
 	selection bool // the selection, not a source
@@ -97,7 +98,8 @@ func (v *view) visible() []*model.Item {
 	} else {
 		items = append([]*model.Item(nil), v.items...)
 	}
-	if len(v.sortKeys) > 0 {
+	// A sort: typed into the filter wins over the view's sort.
+	if len(v.sortKeys) > 0 && (v.filter == nil || len(v.filter.Sort) == 0) {
 		query.SortItems(items, v.sortKeys)
 	}
 	return items
@@ -124,6 +126,7 @@ func (v *view) rebuild() {
 				v.rows[i] = row{item: it}
 			}
 		}
+		v.measureColumns()
 	}
 	v.clamp()
 }

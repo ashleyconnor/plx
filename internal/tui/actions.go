@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"fmt"
+	"github.com/ashleyconnor/plx/internal/field"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -61,6 +63,14 @@ func (m *Model) openMenu() tea.Cmd {
 		if src.Caps().Ordered {
 			add("o", fmt.Sprintf("Reorder this %s by current sort", src.Kind), func() tea.Cmd { return m.reorder() })
 		}
+	}
+	multi := false
+	for _, it := range items {
+		multi = multi || len(it.Versions) > 1
+	}
+	if multi {
+		add("V", "Delete a version…", func() tea.Cmd { return m.pickVersion(items) })
+		es[len(es)-1].danger = true
 	}
 	add("D", "Delete from disk…", func() tea.Cmd { return m.deleteItems(items) })
 	es[len(es)-1].danger = true
@@ -335,6 +345,47 @@ func (m *Model) deleteItems(items []*model.Item) tea.Cmd {
 			return planMsg{err: err}
 		}
 		return planMsg{plan: plan.Delete(items, ok)}
+	}
+}
+
+// versionLabel describes a version for pickers and previews.
+func versionLabel(v model.Version) string {
+	var bits []string
+	for _, s := range []string{field.HumanDuration(v.Duration), v.Resolution, v.VideoCodec, field.HumanBytes(v.Size)} {
+		if s != "" {
+			bits = append(bits, s)
+		}
+	}
+	return strings.Join(bits, " · ")
+}
+
+// pickVersion offers each version of a single item, and for any number of
+// items a rule such as "shortest version" applied to each.
+func (m *Model) pickVersion(items []*model.Item) tea.Cmd {
+	var opts []option
+	if len(items) == 1 {
+		for _, v := range items[0].ByDuration() {
+			name := ""
+			if len(v.Files) > 0 {
+				name = path.Base(v.Files[0])
+			}
+			opts = append(opts, option{label: versionLabel(v), detail: name, value: plan.PickMedia(v.MediaID)})
+		}
+	}
+	for _, p := range plan.Picks {
+		opts = append(opts, option{label: p.Name, detail: "of each item", value: p})
+	}
+	return func() tea.Msg {
+		return pickerMsg{newPicker("Delete which version?", "", opts, func(o option, _ bool) tea.Cmd {
+			pick := o.value.(plan.VersionPick)
+			return func() tea.Msg {
+				ok, err := m.cat.C.AllowsMediaDeletion(m.ctx)
+				if err != nil {
+					return planMsg{err: err}
+				}
+				return planMsg{plan: plan.DeleteVersions(items, pick, ok)}
+			}
+		})}
 	}
 }
 

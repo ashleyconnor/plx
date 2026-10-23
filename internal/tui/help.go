@@ -55,6 +55,8 @@ var filterExamples = [][2]string{
 	{"has:label  -has:label", "has any label / has none"},
 	{"labelcount:1 label:keep", "keep is the only label"},
 	{"-has:collection -has:playlist", "in no collection or playlist"},
+	{"versions>1", "more than one version"},
+	{"dur.min<5m", "has a short version (a sample)"},
 	{`collection:"Sci-fi"`, "in that collection"},
 	{"is:watched  -is:watched", "yes/no fields"},
 	{"path:/tv/anime/", "path contains, at any depth"},

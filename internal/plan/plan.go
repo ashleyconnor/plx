@@ -24,6 +24,7 @@ const (
 	OpAddLabel
 	OpRemoveLabel
 	OpDelete
+	OpDeleteVersion
 )
 
 // Op is one executable step. Which fields are used depends on Kind.
@@ -40,6 +41,9 @@ type Op struct {
 
 	// OpMove: Items[0] is moved after AfterMember ("" = to the top).
 	AfterMember string
+
+	// OpDeleteVersion: Versions[i] is the version of Items[i] to delete.
+	Versions []model.Version
 }
 
 func (o Op) Describe() string {
@@ -63,6 +67,8 @@ func (o Op) Describe() string {
 		return fmt.Sprintf("remove label %q from %d items", o.Label, n)
 	case OpDelete:
 		return fmt.Sprintf("delete %d items and their files from disk", n)
+	case OpDeleteVersion:
+		return fmt.Sprintf("delete %d versions and their files from disk", n)
 	}
 	return "?"
 }
@@ -115,7 +121,7 @@ func (p *Plan) skip(it *model.Item, format string, a ...any) {
 // Destructive reports whether applying the plan can't be undone.
 func (p *Plan) Destructive() bool {
 	for _, o := range p.Ops {
-		if o.Kind == OpDelete {
+		if o.Kind == OpDelete || o.Kind == OpDeleteVersion {
 			return true
 		}
 	}

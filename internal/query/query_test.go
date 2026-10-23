@@ -93,6 +93,29 @@ func TestFilter(t *testing.T) {
 	}
 }
 
+func TestVersions(t *testing.T) {
+	withSample := &model.Item{Key: "s", Versions: []model.Version{
+		{Duration: 2 * time.Minute, Resolution: "4k"}, {Duration: 130 * time.Minute, Resolution: "1080"}}}
+	single := &model.Item{Key: "m", Versions: []model.Version{{Duration: 80 * time.Minute, Resolution: "720"}}}
+	cases := []struct{ q, want string }{
+		{"dur<90m", "m"},    // the sample doesn't make the movie look short
+		{"dur.min<5m", "s"}, // but it can be found
+		{"versions>1", "s"},
+		{"res:1080", "s"}, // text fields match any version
+		{"dur.max>2h", "s"},
+		{"sort:dur.min", "s,m"},
+	}
+	for _, c := range cases {
+		q, err := Parse(c.q)
+		if err != nil {
+			t.Fatalf("Parse(%q): %v", c.q, err)
+		}
+		if got := keys(q.Filter([]*model.Item{withSample, single})); got != c.want {
+			t.Errorf("%q = [%s], want [%s]", c.q, got, c.want)
+		}
+	}
+}
+
 func TestSort(t *testing.T) {
 	cases := []struct{ q, want string }{
 		{"sort:size", "4,3,1,2"},

@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -120,7 +121,9 @@ func (m *Model) filterLine(v *view) string {
 		parts = append(parts, stErr.Render(v.filterErr))
 	}
 	if v.kind == itemView {
-		if len(v.sortKeys) > 0 {
+		if v.filter != nil && len(v.filter.Sort) > 0 {
+			// shown as part of the filter text
+		} else if len(v.sortKeys) > 0 {
 			parts = append(parts, "sort: "+query.FormatSort(v.sortKeys))
 		} else if c := v.container(); c != nil && c.Caps().Ordered {
 			parts = append(parts, "sort: "+c.Kind.String()+" order")
@@ -138,7 +141,7 @@ func (m *Model) filterLine(v *view) string {
 func (m *Model) titleWidth(v *view) int {
 	w := m.w - 2
 	for _, c := range v.columns {
-		w -= colWidth(c) + 1
+		w -= v.colWidth(c) + 1
 	}
 	return max(10, w)
 }
@@ -150,7 +153,7 @@ func (m *Model) columnHeader(v *view) string {
 	var b strings.Builder
 	b.WriteString("  " + strings.Repeat(" ", cellWidth()) + fit("TITLE", m.titleWidth(v)-cellWidth()))
 	for _, c := range v.columns {
-		b.WriteString(" " + fitLeft(strings.ToUpper(columnLabel(c)), colWidth(c)))
+		b.WriteString(" " + fitLeft(strings.ToUpper(columnLabel(c)), v.colWidth(c)))
 	}
 	return stDim.Render(b.String())
 }
@@ -164,6 +167,31 @@ func columnLabel(f *field.Field) string {
 		}
 	}
 	return label
+}
+
+// maxColWidth caps how wide a column grows to fit values like "2m|2h30m".
+const maxColWidth = 16
+
+// colWidth is the column's width in this view: its default, widened to fit
+// the widest visible value.
+func (v *view) colWidth(f *field.Field) int {
+	if w, ok := v.widths[f]; ok {
+		return w
+	}
+	return colWidth(f)
+}
+
+func (v *view) measureColumns() {
+	v.widths = map[*field.Field]int{}
+	for _, c := range v.columns {
+		w := colWidth(c)
+		for _, r := range v.rows {
+			if r.item != nil {
+				w = max(w, min(maxColWidth, runewidth.StringWidth(c.Format(r.item))))
+			}
+		}
+		v.widths[c] = w
+	}
 }
 
 func colWidth(f *field.Field) int {
@@ -248,7 +276,7 @@ func (m *Model) renderRow(v *view, r row, cursor bool) string {
 		var b strings.Builder
 		b.WriteString(cell(icons.kind(r.item.Kind)) + fit(r.item.DisplayTitle(), tw))
 		for _, c := range v.columns {
-			b.WriteString(" " + fitLeft(c.Format(r.item), colWidth(c)))
+			b.WriteString(" " + fitLeft(c.Format(r.item), v.colWidth(c)))
 		}
 		line = b.String()
 	case r.isFolder():
@@ -524,7 +552,14 @@ func (m *Model) previewView() string {
 		const sample = 8
 		var files []string
 		for _, op := range p.Ops {
-			for _, it := range op.Items {
+			for i, it := range op.Items {
+				if op.Kind == plan.OpDeleteVersion {
+					v := op.Versions[i]
+					for _, f := range v.Files {
+						files = append(files, fmt.Sprintf("%s (%s): %s", it.DisplayTitle(), versionLabel(v), path.Base(f)))
+					}
+					continue
+				}
 				files = append(files, it.Files...)
 			}
 		}

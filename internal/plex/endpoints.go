@@ -45,6 +45,11 @@ func (c *Client) AllowsMediaDeletion(ctx context.Context) (bool, error) {
 	return false, nil
 }
 
+// DeleteMedia deletes one version (Media entry) of an item and its files.
+func (c *Client) DeleteMedia(ctx context.Context, key, mediaID string) error {
+	return c.doIdem(ctx, http.MethodDelete, "/library/metadata/"+key+"/media/"+mediaID, nil, nil)
+}
+
 // DeleteItem deletes an item and all of its media files from disk.
 func (c *Client) DeleteItem(ctx context.Context, key string) error {
 	return c.doIdem(ctx, http.MethodDelete, "/library/metadata/"+key, nil, nil)
