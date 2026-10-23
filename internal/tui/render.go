@@ -218,9 +218,11 @@ func (m *Model) dropdown(n int) []string {
 		}
 		rows = append(rows, line)
 	}
+	more := ""
 	if len(sugs) > n {
-		rows = append(rows, stDim.Render(fmt.Sprintf("%d more…", len(sugs)-start-len(rows))))
+		more = fmt.Sprintf("%d more · ", len(sugs)-start-len(rows))
 	}
+	rows = append(rows, stDim.Render(more)+stKey.Render("tab")+stDim.Render(" to complete · ")+stKey.Render("↑↓")+stDim.Render(" choose"))
 	box := stBox.Padding(0, 1).Render(strings.Join(rows, "\n"))
 	var out []string
 	for _, l := range strings.Split(box, "\n") {

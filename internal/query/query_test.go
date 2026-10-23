@@ -63,7 +63,7 @@ func TestFilter(t *testing.T) {
 		{"viewed>30d", "2,3,4"},        // never viewed counts as old
 		{"viewed<30d", "1"},
 		{"dur>2h", "2"},
-		{"plays:>1", "1"},   // GitHub-style comparison
+		{"plays:>1", "1"}, // GitHub-style comparison
 		{"size:>=5G", "1,2"},
 		{"plays>1", "1"},
 		{"dur>=117", "1,2"}, // bare number = minutes
