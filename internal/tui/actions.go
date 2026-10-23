@@ -72,7 +72,11 @@ func (m *Model) openMenu() tea.Cmd {
 		add("V", "Delete a version…", func() tea.Cmd { return m.pickVersion(items) })
 		es[len(es)-1].danger = true
 	}
-	add("D", "Delete from disk…", func() tea.Cmd { return m.deleteItems(items) })
+	deleteLabel := "Delete from disk…"
+	if multi {
+		deleteLabel = "Delete from disk, all versions…"
+	}
+	add("D", deleteLabel, func() tea.Cmd { return m.deleteItems(items) })
 	es[len(es)-1].danger = true
 	m.menu = &menu{title: fmt.Sprintf("%s · %s", plural(len(items), "item"), humanSize(items)), entries: es}
 	m.mode = modeMenu

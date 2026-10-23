@@ -233,3 +233,13 @@ func TestDeleteVersions(t *testing.T) {
 		t.Error("PickMedia picked the wrong version")
 	}
 }
+
+func TestDeleteNamesAllVersions(t *testing.T) {
+	it := movie("1", "1")
+	it.Files, it.Size = []string{"/m/Sample.mkv", "/m/m.mkv"}, 2<<30
+	it.Versions = []model.Version{{MediaID: "a"}, {MediaID: "b"}}
+	p := Delete([]*model.Item{it}, true)
+	if want := "Delete 1 items with all 2 versions (2 files, 2.0G) from disk"; p.Title != want {
+		t.Errorf("title = %q, want %q", p.Title, want)
+	}
+}

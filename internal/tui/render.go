@@ -553,14 +553,21 @@ func (m *Model) previewView() string {
 		var files []string
 		for _, op := range p.Ops {
 			for i, it := range op.Items {
-				if op.Kind == plan.OpDeleteVersion {
+				switch {
+				case op.Kind == plan.OpDeleteVersion:
 					v := op.Versions[i]
 					for _, f := range v.Files {
 						files = append(files, fmt.Sprintf("%s (%s): %s", it.DisplayTitle(), versionLabel(v), path.Base(f)))
 					}
-					continue
+				case len(it.Versions) > 1: // name each version so it's clear all of them go
+					for _, v := range it.ByDuration() {
+						for _, f := range v.Files {
+							files = append(files, fmt.Sprintf("%s (%s): %s", it.DisplayTitle(), versionLabel(v), path.Base(f)))
+						}
+					}
+				default:
+					files = append(files, it.Files...)
 				}
-				files = append(files, it.Files...)
 			}
 		}
 		for i, f := range files {

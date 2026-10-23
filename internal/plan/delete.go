@@ -20,13 +20,18 @@ func Delete(items []*model.Item, allowed bool) *Plan {
 		p.block("nothing to delete")
 		return p
 	}
-	files := 0
+	files, versions := 0, 0
 	var size int64
 	for _, it := range items {
 		files += len(it.Files)
+		versions += max(1, len(it.Versions))
 		size += it.Size
 	}
 	p.Title = fmt.Sprintf("Delete %d items (%d files, %s) from disk", len(items), files, field.HumanBytes(size))
+	if versions > len(items) {
+		p.Title = fmt.Sprintf("Delete %d items with all %d versions (%d files, %s) from disk",
+			len(items), versions, files, field.HumanBytes(size))
+	}
 	p.warn("files are permanently deleted; this can't be undone")
 	p.warn("Plex deletes files, not folders: emptied folders are left behind")
 	p.Ops = append(p.Ops, Op{Kind: OpDelete, Items: items})
