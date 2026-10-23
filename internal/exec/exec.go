@@ -35,7 +35,7 @@ func Steps(p *plan.Plan) int {
 	n := 0
 	for _, op := range p.Ops {
 		switch op.Kind {
-		case plan.OpRemove:
+		case plan.OpRemove, plan.OpDelete:
 			n += len(op.Items)
 		default:
 			n++
@@ -109,6 +109,15 @@ func (e *Executor) apply(ctx context.Context, op plan.Op, step func(string)) (st
 				err = fmt.Errorf("can't remove from a %s", op.Target.Kind)
 			}
 			step(fmt.Sprintf("remove %q from %s", it.DisplayTitle(), op.Target))
+			if err != nil {
+				return "", err
+			}
+		}
+		return "", nil
+	case plan.OpDelete:
+		for _, it := range op.Items {
+			err := e.C.DeleteItem(ctx, it.Key)
+			step(fmt.Sprintf("delete %q", it.DisplayTitle()))
 			if err != nil {
 				return "", err
 			}

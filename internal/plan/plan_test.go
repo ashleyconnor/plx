@@ -183,3 +183,18 @@ func TestReorderCollectionSwitchesToCustom(t *testing.T) {
 		t.Fatalf("ops = %+v", p.Ops)
 	}
 }
+
+func TestDelete(t *testing.T) {
+	a, b := movie("1", "1"), movie("2", "1")
+	a.Files, a.Size = []string{"/m/a.mkv", "/m/a.srt"}, 3<<30
+	if p := Delete([]*model.Item{a}, false); !p.Blocked() {
+		t.Error("delete allowed when the server forbids it")
+	}
+	p := Delete([]*model.Item{a, b, a}, true)
+	if p.Blocked() || !p.Destructive() || len(p.Ops[0].Items) != 2 {
+		t.Fatalf("plan = %+v", p)
+	}
+	if p.Title != "Delete 2 items (2 files, 3.0G) from disk" {
+		t.Errorf("title = %q", p.Title)
+	}
+}

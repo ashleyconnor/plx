@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"time"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -50,6 +51,7 @@ type Model struct {
 
 	status    string
 	statusErr bool
+	statusAt  time.Time
 
 	menu    *menu
 	picker  *picker
@@ -61,7 +63,12 @@ type Model struct {
 	spinner  spinner.Model
 }
 
-func Run(c *source.Catalog) error {
+type Options struct {
+	Icons string // "emoji" (default), "ascii" or "none"
+}
+
+func Run(c *source.Catalog, opts Options) error {
+	SetIcons(opts.Icons)
 	m := newModel(c)
 	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
 	return err
@@ -109,6 +116,11 @@ type statusMsg struct {
 }
 
 func (m *Model) load(v *view) tea.Cmd {
+	if v.selection {
+		v.items, v.stale = m.selected(), false
+		v.rebuild()
+		return nil
+	}
 	v.loading, v.err, v.stale = true, nil, false
 	return func() tea.Msg {
 		if v.kind == dirView {
@@ -127,8 +139,11 @@ func (m *Model) load(v *view) tea.Cmd {
 	}
 }
 
+// Success messages fade after statusTTL; errors stay until the next key.
+const statusTTL = 6 * time.Second
+
 func (m *Model) setStatus(text string, isErr bool) {
-	m.status, m.statusErr = text, isErr
+	m.status, m.statusErr, m.statusAt = text, isErr, time.Now()
 }
 
 // --- update ------------------------------------------------------------------
@@ -161,6 +176,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.preview, m.mode = msg.plan, modePreview
+		if msg.plan.Destructive() {
+			m.input.SetValue("")
+			m.input.Focus()
+			return m, textinput.Blink
+		}
 		return m, nil
 	case pickerMsg:
 		m.picker, m.mode = msg.p, modePicker
@@ -209,7 +229,9 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 
 func (m *Model) normalKey(msg tea.KeyMsg) tea.Cmd {
 	v := m.top()
-	m.status = ""
+	if m.statusErr {
+		m.status = ""
+	}
 	page := max(1, m.listHeight()-1)
 	switch msg.String() {
 	case "q":
@@ -260,7 +282,9 @@ func (m *Model) normalKey(msg tea.KeyMsg) tea.Cmd {
 		m.toggleCurrent()
 		v.cursor++
 	case "a":
-		m.selectVisible(true)
+		m.toggleVisible()
+	case "v":
+		return m.viewSelection()
 	case "A":
 		m.invertVisible()
 	case "c":
@@ -448,10 +472,32 @@ func (m *Model) visibleItems() []*model.Item {
 	return out
 }
 
-func (m *Model) selectVisible(on bool) {
-	for _, it := range m.visibleItems() {
-		m.setSelected(it, on)
+// toggleVisible selects every visible item, or unselects them if they are
+// all selected already.
+func (m *Model) toggleVisible() {
+	items := m.visibleItems()
+	all := len(items) > 0
+	for _, it := range items {
+		all = all && m.isSelected(it)
 	}
+	for _, it := range items {
+		m.setSelected(it, !all)
+	}
+}
+
+// viewSelection opens the selection as an item list. It can be filtered,
+// sorted, trimmed with space and acted on like any other list.
+func (m *Model) viewSelection() tea.Cmd {
+	if len(m.sel) == 0 {
+		m.setStatus("nothing selected", true)
+		return nil
+	}
+	if m.top().selection {
+		return nil
+	}
+	v := &view{kind: itemView, title: icons.selection + " Selection", selection: true, columns: defaultColumns()}
+	m.stack = append(m.stack, v)
+	return m.load(v)
 }
 
 func (m *Model) invertVisible() {

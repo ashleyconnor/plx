@@ -23,12 +23,13 @@ var (
 	stErr    = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	stWarn   = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	stOK     = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
+	stKey    = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
 	stBox    = lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(lipgloss.Color("39")).Padding(0, 1)
 )
 
 // Fixed lines around the list: header, filter line, column header, two
-// detail lines, status line.
-const chrome = 6
+// detail lines, message line, key hints.
+const chrome = 7
 
 func (m *Model) listHeight() int { return max(1, m.h-chrome) }
 
@@ -70,7 +71,8 @@ func (m *Model) View() string {
 	b.WriteString(m.columnHeader(v) + "\n")
 	b.WriteString(m.list(v))
 	b.WriteString(m.detail(v) + "\n")
-	b.WriteString(m.statusLine(v))
+	b.WriteString(m.messageLine() + "\n")
+	b.WriteString(m.hintsLine(v))
 	return b.String()
 }
 
@@ -136,7 +138,7 @@ func (m *Model) columnHeader(v *view) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("  " + fit("TITLE", m.titleWidth(v)))
+	b.WriteString("  " + strings.Repeat(" ", cellWidth()) + fit("TITLE", m.titleWidth(v)-cellWidth()))
 	for _, c := range v.columns {
 		b.WriteString(" " + fitLeft(strings.ToUpper(columnLabel(c)), colWidth(c)))
 	}
@@ -189,14 +191,14 @@ func (m *Model) list(v *view) string {
 }
 
 func (m *Model) renderRow(v *view, r row, cursor bool) string {
-	tw := m.titleWidth(v)
+	tw := m.titleWidth(v) - cellWidth()
 	var line string
 	selected := false
 	switch {
 	case r.item != nil:
 		selected = m.isSelected(r.item)
 		var b strings.Builder
-		b.WriteString(fit(r.item.DisplayTitle(), tw))
+		b.WriteString(cell(icons.kind(r.item.Kind)) + fit(r.item.DisplayTitle(), tw))
 		for _, c := range v.columns {
 			b.WriteString(" " + fitLeft(c.Format(r.item), colWidth(c)))
 		}
@@ -209,19 +211,19 @@ func (m *Model) renderRow(v *view, r row, cursor bool) string {
 			}
 		}
 		selected = n > 0 && n == len(r.under)
-		line = fit(r.label, tw) + " " + fitLeft(field.HumanBytes(r.size), field.Size.Width) + "  " + stDim.Render(plural(len(r.under), "item"))
-		if !cursor {
-			line = stDir.Render(fit(r.label, tw)) + line[len(fit(r.label, tw)):]
+		name := fit(r.label, tw)
+		if !cursor && !selected {
+			name = stDir.Render(name)
 		}
+		line = cell(icons.folder) + name + " " + fitLeft(field.HumanBytes(r.size), field.Size.Width) + "  " + stDim.Render(plural(len(r.under), "item"))
 	default:
-		w := m.w - 2
-		label := r.label
+		w := m.w - 2 - cellWidth()
+		nameW := min(w, 40)
+		name := fit(r.label, nameW)
 		if r.push != nil && !cursor {
-			label = stDir.Render(fit(r.label, min(w, 40)))
-		} else {
-			label = fit(r.label, min(w, 40))
+			name = stDir.Render(name)
 		}
-		line = label + "  " + stDim.Render(runewidth.Truncate(r.detail, max(0, w-42), "…"))
+		line = cell(r.icon) + name + "  " + stDim.Render(runewidth.Truncate(r.detail, max(0, w-nameW-2), "…"))
 	}
 	marker := "  "
 	if selected {
@@ -295,12 +297,16 @@ func (m *Model) detail(v *view) string {
 	return stDim.Render(fit(path, m.w)) + "\n" + stDim.Render(fit(strings.Join(bits, " · "), m.w))
 }
 
-func (m *Model) statusLine(v *view) string {
+// messageLine shows the current mode's input, progress, or a recent message.
+func (m *Model) messageLine() string {
 	switch m.mode {
 	case modePrompt:
-		return m.prompt.label + ": " + m.input.View()
+		return stKey.Render(m.prompt.label+": ") + m.input.View()
 	case modeSort:
-		return stBold.Render("sort: ") + "[t]itle [s]ize [d]uration [a]dded [v]iewed [p]lays [y]ear [b]itrate [f]ile  [r]everse [0]source order [c]ustom"
+		return stBold.Render("sort by: ") + renderHints([]hint{
+			{"t", "title"}, {"s", "size"}, {"d", "duration"}, {"a", "added"}, {"v", "viewed"}, {"p", "plays"},
+			{"y", "year"}, {"b", "bitrate"}, {"f", "file"}, {"r", "reverse"}, {"0", "source order"}, {"c", "custom…"},
+		}, m.w-9)
 	case modeRunning:
 		bar := ""
 		if m.progress.Total > 0 {
@@ -310,17 +316,52 @@ func (m *Model) statusLine(v *view) string {
 		}
 		return m.spinner.View() + " " + bar + runewidth.Truncate(m.progress.Step, max(0, m.w-40), "…")
 	}
-	if m.status != "" {
-		if m.statusErr {
-			return stErr.Render(runewidth.Truncate(m.status, m.w, "…"))
+	if m.status == "" || time.Since(m.statusAt) > statusTTL {
+		return ""
+	}
+	if m.statusErr {
+		return stErr.Render(runewidth.Truncate("✗ "+m.status, m.w, "…"))
+	}
+	return stOK.Render(runewidth.Truncate("✓ "+m.status, m.w, "…"))
+}
+
+type hint struct{ key, desc string }
+
+// renderHints draws "key desc" pairs, dropping trailing ones that don't fit.
+func renderHints(hs []hint, w int) string {
+	var b strings.Builder
+	used := 0
+	for i, h := range hs {
+		gap := 0
+		if i > 0 {
+			gap = 3
 		}
-		return stOK.Render(runewidth.Truncate(m.status, m.w, "…"))
+		n := runewidth.StringWidth(h.key) + 1 + runewidth.StringWidth(h.desc)
+		if used+gap+n > w {
+			break
+		}
+		if i > 0 {
+			b.WriteString(stDim.Render(" · "))
+		}
+		b.WriteString(stKey.Render(h.key) + " " + stDim.Render(h.desc))
+		used += gap + n
 	}
-	hints := "↑↓ move  ←→ open/back  / filter  ? help  q quit"
+	return b.String()
+}
+
+func (m *Model) hintsLine(v *view) string {
+	var hs []hint
 	if v.kind == itemView {
-		hints = "space select  a all  ; actions  / filter  s sort  f folders  S save  ? help"
+		hs = []hint{{"space", "select"}, {"a", "all/none"}, {"v", "view selected"}, {"x", "actions"},
+			{"/", "filter"}, {"s", "sort"}, {"f", "folders"}, {"S", "save"}, {"?", "help"}}
+	} else {
+		hs = []hint{{"→", "open"}, {"←", "back"}, {"/", "filter"}}
+		if len(m.sel) > 0 {
+			hs = append(hs, hint{"v", "view selected"})
+		}
+		hs = append(hs, hint{"?", "help"}, hint{"q", "quit"})
 	}
-	return stDim.Render(hints)
+	return renderHints(hs, m.w)
 }
 
 // --- overlays ----------------------------------------------------------------
@@ -334,7 +375,11 @@ func (m *Model) menuView() string {
 	var b strings.Builder
 	b.WriteString(stBold.Render(mu.title) + "\n\n")
 	for i, e := range mu.entries {
-		line := fmt.Sprintf(" %s  %s ", stSel.Render(e.key), e.label)
+		label := e.label
+		if e.danger {
+			label = stErr.Render(label)
+		}
+		line := fmt.Sprintf(" %s  %s ", stKey.Render(e.key), label)
 		if i == mu.cursor {
 			line = stCursor.Render(stripANSI(line))
 		}
@@ -405,10 +450,30 @@ func (m *Model) previewView() string {
 			}
 		}
 	}
+	if p.Destructive() {
+		b.WriteString("\n" + stErr.Render("files that will be deleted:") + "\n")
+		const sample = 8
+		var files []string
+		for _, op := range p.Ops {
+			for _, it := range op.Items {
+				files = append(files, it.Files...)
+			}
+		}
+		for i, f := range files {
+			if i == sample {
+				b.WriteString(stDim.Render(fmt.Sprintf("  … and %d more", len(files)-sample)) + "\n")
+				break
+			}
+			b.WriteString("  " + runewidth.Truncate(f, w-2, "…") + "\n")
+		}
+	}
 	b.WriteString("\n")
-	if p.Blocked() {
+	switch {
+	case p.Blocked():
 		b.WriteString(stDim.Render("can't apply · esc back"))
-	} else {
+	case p.Destructive():
+		b.WriteString(stErr.Render("type delete to confirm: ") + m.input.View() + "\n" + stDim.Render("enter confirm · esc cancel"))
+	default:
 		b.WriteString(stOK.Render("y apply") + stDim.Render(" · n cancel"))
 	}
 	return stBox.Width(w + 4).Render(b.String())
@@ -416,13 +481,13 @@ func (m *Model) previewView() string {
 
 const helpText = `plx — keys
 
-  j/k ↑/↓      move            g/G      top/bottom      ^d/^u  page
-  l/→/enter    open            h/←/⌫    back / up a folder
-  space        select          a        select visible  A      invert
-  c            clear selection esc      clear filter, then selection
-  /            filter          s        sort            f      folder lens
-  ; or x       actions         S        save as query   r      refresh
-  q            quit            ?        this help
+  j/k ↑/↓      move              g/G      top/bottom        ^d/^u  page
+  l/→/enter    open              h/←/⌫    back / up a folder
+  space        select            a        select all/none   A      invert
+  v            view selection    c        clear selection
+  /            filter            s        sort              f      folder lens
+  x or ;       actions           S        save as query     r      refresh
+  esc          clear filter      q        quit              ?      this help
 
   Selection persists while you browse: pick items from several places,
   then act on them all at once.
@@ -437,12 +502,18 @@ filter language
   added<30d              added in the last 30 days  viewed>1y  added>2024-01-01
   sort:size-,title       sort (- = descending)
 
-fields: `
+fields
+`
 
 func (m *Model) helpView() string {
 	var names []string
 	for _, f := range field.All() {
 		names = append(names, f.Name)
 	}
-	return helpText + strings.Join(names, " ") + "\n\n" + stDim.Render("press any key")
+	wrap := lipgloss.NewStyle().Width(max(20, m.w-4)).MarginLeft(2)
+	out := helpText + "\n" + wrap.Render(strings.Join(names, " ")) + "\n"
+	if l := legend(); l != "" {
+		out += "\nicons\n\n" + wrap.Render(l) + "\n"
+	}
+	return out + "\n" + stDim.Render("press any key")
 }

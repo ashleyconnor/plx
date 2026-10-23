@@ -83,3 +83,14 @@ func TestEditTagsEncoding(t *testing.T) {
 		t.Errorf("remove query = %s\nwant           %s", got, want)
 	}
 }
+
+func TestAllowsMediaDeletion(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"MediaContainer":{"Setting":[{"id":"other","value":"x"},{"id":"allowMediaDeletion","value":true}]}}`))
+	}))
+	defer srv.Close()
+	ok, err := New(srv.URL, "tok", Options{}).AllowsMediaDeletion(context.Background())
+	if err != nil || !ok {
+		t.Fatalf("got %v, %v", ok, err)
+	}
+}

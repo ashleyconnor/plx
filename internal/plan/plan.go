@@ -23,6 +23,7 @@ const (
 	OpSetCollectionSortCustom
 	OpAddLabel
 	OpRemoveLabel
+	OpDelete
 )
 
 // Op is one executable step. Which fields are used depends on Kind.
@@ -60,6 +61,8 @@ func (o Op) Describe() string {
 		return fmt.Sprintf("add label %q to %d items", o.Label, n)
 	case OpRemoveLabel:
 		return fmt.Sprintf("remove label %q from %d items", o.Label, n)
+	case OpDelete:
+		return fmt.Sprintf("delete %d items and their files from disk", n)
 	}
 	return "?"
 }
@@ -107,6 +110,16 @@ func (p *Plan) warn(format string, a ...any) {
 
 func (p *Plan) skip(it *model.Item, format string, a ...any) {
 	p.Skipped = append(p.Skipped, Skip{it, fmt.Sprintf(format, a...)})
+}
+
+// Destructive reports whether applying the plan can't be undone.
+func (p *Plan) Destructive() bool {
+	for _, o := range p.Ops {
+		if o.Kind == OpDelete {
+			return true
+		}
+	}
+	return false
 }
 
 // SkipSummary groups skipped items by reason: "3 × already in playlist".

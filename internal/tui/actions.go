@@ -23,6 +23,7 @@ import (
 type menuEntry struct {
 	key, label string
 	run        func() tea.Cmd
+	danger     bool
 }
 
 type menu struct {
@@ -43,7 +44,9 @@ func (m *Model) openMenu() tea.Cmd {
 	}
 	src := v.container()
 	var es []menuEntry
-	add := func(key, label string, run func() tea.Cmd) { es = append(es, menuEntry{key, label, run}) }
+	add := func(key, label string, run func() tea.Cmd) {
+		es = append(es, menuEntry{key: key, label: label, run: run})
+	}
 
 	add("p", "Add to playlist…", func() tea.Cmd { return m.pickPlaylist(items, nil) })
 	add("c", "Add to collection…", func() tea.Cmd { return m.pickCollection(items, nil) })
@@ -59,6 +62,8 @@ func (m *Model) openMenu() tea.Cmd {
 			add("o", fmt.Sprintf("Reorder this %s by current sort", src.Kind), func() tea.Cmd { return m.reorder() })
 		}
 	}
+	add("D", "Delete from disk…", func() tea.Cmd { return m.deleteItems(items) })
+	es[len(es)-1].danger = true
 	m.menu = &menu{title: fmt.Sprintf("%s · %s", plural(len(items), "item"), humanSize(items)), entries: es}
 	m.mode = modeMenu
 	return nil
@@ -323,6 +328,16 @@ func (m *Model) pickLabel(items []*model.Item, remove bool) tea.Cmd {
 	}
 }
 
+func (m *Model) deleteItems(items []*model.Item) tea.Cmd {
+	return func() tea.Msg {
+		ok, err := m.cat.C.AllowsMediaDeletion(m.ctx)
+		if err != nil {
+			return planMsg{err: err}
+		}
+		return planMsg{plan: plan.Delete(items, ok)}
+	}
+}
+
 // reorder rewrites the container's order to match the current sort. It
 // reorders every member, not just the ones matching the filter.
 func (m *Model) reorder() tea.Cmd {
@@ -342,6 +357,9 @@ func (m *Model) reorder() tea.Cmd {
 // --- preview and execution ---------------------------------------------------
 
 func (m *Model) previewKey(msg tea.KeyMsg) tea.Cmd {
+	if m.preview.Destructive() && !m.preview.Blocked() {
+		return m.confirmKey(msg)
+	}
 	switch msg.String() {
 	case "y", "enter":
 		if m.preview.Blocked() {
@@ -355,9 +373,30 @@ func (m *Model) previewKey(msg tea.KeyMsg) tea.Cmd {
 	case "n", "esc", "q":
 		m.preview = nil
 		m.mode = modeNormal
-		m.setStatus("cancelled", false)
 	}
 	return nil
+}
+
+// confirmKey handles the typed confirmation destructive plans require.
+func (m *Model) confirmKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc":
+		m.preview, m.mode = nil, modeNormal
+		m.input.Blur()
+		return nil
+	case "enter":
+		if strings.TrimSpace(m.input.Value()) != "delete" {
+			return nil
+		}
+		m.input.Blur()
+		p := m.preview
+		m.preview, m.mode = nil, modeRunning
+		m.progress = exec.Progress{Total: exec.Steps(p), Step: "starting…"}
+		return m.execute(p)
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return cmd
 }
 
 func (m *Model) execute(p *plan.Plan) tea.Cmd {

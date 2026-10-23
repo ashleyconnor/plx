@@ -41,7 +41,7 @@ func run(args []string) error {
 	ctx := context.Background()
 
 	if len(args) == 0 {
-		return tui.Run(cat)
+		return tui.Run(cat, tui.Options{Icons: cfg.Icons})
 	}
 	switch args[0] {
 	case "ls":

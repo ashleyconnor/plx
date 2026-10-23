@@ -21,6 +21,7 @@ const (
 
 // row is one line in a view: a directory entry, a folder (folder lens) or an item.
 type row struct {
+	icon          string
 	label, detail string
 	push          func() *view // directory entries
 
@@ -56,6 +57,8 @@ type view struct {
 
 	rows           []row
 	cursor, offset int
+
+	selection bool // the selection, not a source
 
 	loading, stale bool
 	err            error

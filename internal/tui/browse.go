@@ -20,16 +20,16 @@ import (
 //	Queries/<saved query>
 
 func (m *Model) rootView() *view {
-	dir := func(label, detail string, push func() *view) row {
-		return row{label: label + "/", detail: detail, push: push}
+	dir := func(icon, label, detail string, push func() *view) row {
+		return row{icon: icon, label: label + "/", detail: detail, push: push}
 	}
 	return &view{kind: dirView, title: "plx", loader: func(context.Context) ([]row, error) {
 		return []row{
-			dir("Libraries", "every item in a library", m.librariesView),
-			dir("Playlists", "", m.playlistsView),
-			dir("Collections", "by library", func() *view { return m.perSectionView("Collections", m.collectionsView) }),
-			dir("Labels", "by library", func() *view { return m.perSectionView("Labels", m.labelsView) }),
-			dir("Queries", "saved queries", m.queriesView),
+			dir(icons.library, "Libraries", "every item in a library", m.librariesView),
+			dir(icons.playlist, "Playlists", "", m.playlistsView),
+			dir(icons.collection, "Collections", "by library", func() *view { return m.perSectionView("Collections", icons.collection, m.collectionsView) }),
+			dir(icons.label, "Labels", "by library", func() *view { return m.perSectionView("Labels", icons.label, m.labelsView) }),
+			dir(icons.query, "Queries", "saved queries", m.queriesView),
 		}, nil
 	}}
 }
@@ -50,7 +50,7 @@ func (m *Model) librariesView() *view {
 		}
 		var rows []row
 		for _, s := range secs {
-			rows = append(rows, row{label: s.Title + "/", detail: string(s.LeafKind()) + "s", push: func() *view {
+			rows = append(rows, row{icon: icons.library, label: s.Title + "/", detail: string(s.LeafKind()) + "s", push: func() *view {
 				return m.itemsView(source.Library{Section: s}, []query.SortKey{{Field: field.Title}})
 			}})
 		}
@@ -77,7 +77,7 @@ func (m *Model) playlistsView() *view {
 		}
 		var rows []row
 		for _, p := range pls {
-			rows = append(rows, row{label: p.Title + "/", detail: containerDetail(p), push: func() *view {
+			rows = append(rows, row{icon: icons.playlist, label: p.Title + "/", detail: containerDetail(p), push: func() *view {
 				return m.itemsView(source.Members{C: p}, nil)
 			}})
 		}
@@ -85,7 +85,7 @@ func (m *Model) playlistsView() *view {
 	}}
 }
 
-func (m *Model) perSectionView(title string, child func(source.Section) *view) *view {
+func (m *Model) perSectionView(title, icon string, child func(source.Section) *view) *view {
 	return &view{kind: dirView, title: title, loader: func(ctx context.Context) ([]row, error) {
 		secs, err := m.cat.Sections(ctx)
 		if err != nil {
@@ -93,7 +93,7 @@ func (m *Model) perSectionView(title string, child func(source.Section) *view) *
 		}
 		var rows []row
 		for _, s := range secs {
-			rows = append(rows, row{label: s.Title + "/", push: func() *view { return child(s) }})
+			rows = append(rows, row{icon: icon, label: s.Title + "/", push: func() *view { return child(s) }})
 		}
 		return rows, nil
 	}}
@@ -107,7 +107,7 @@ func (m *Model) collectionsView(s source.Section) *view {
 		}
 		var rows []row
 		for _, c := range cs {
-			rows = append(rows, row{label: c.Title + "/", detail: containerDetail(c), push: func() *view {
+			rows = append(rows, row{icon: icons.collection, label: c.Title + "/", detail: containerDetail(c), push: func() *view {
 				return m.itemsView(source.Members{C: c}, nil)
 			}})
 		}
@@ -124,7 +124,7 @@ func (m *Model) labelsView(s source.Section) *view {
 		var rows []row
 		for _, l := range labels {
 			c := &model.Container{Kind: model.Label, ID: l, Title: l, SectionID: s.ID}
-			rows = append(rows, row{label: l + "/", push: func() *view {
+			rows = append(rows, row{icon: icons.label, label: l + "/", push: func() *view {
 				return m.itemsView(source.Members{C: c}, []query.SortKey{{Field: field.Title}})
 			}})
 		}
@@ -140,7 +140,7 @@ func (m *Model) queriesView() *view {
 		}
 		var rows []row
 		for _, q := range qs {
-			rows = append(rows, row{label: q.Name + "/", detail: q.Filter, push: func() *view {
+			rows = append(rows, row{icon: icons.query, label: q.Name + "/", detail: q.Filter, push: func() *view {
 				v := &view{kind: itemView, title: q.Name, columns: defaultColumns()}
 				if len(q.Columns) > 0 {
 					v.columns = nil

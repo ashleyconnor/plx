@@ -18,6 +18,7 @@ Configure with `~/.config/plx/config.toml`:
 url = "192.168.1.10:32400"   # https:// is assumed if no scheme
 token = "…"
 insecure = true              # skip TLS verification (self-signed certs)
+icons = "emoji"              # emoji (default), ascii or none
 ```
 
 or with the `PLEX_URL`, `PLEX_TOKEN` and `PLEX_INSECURE` environment variables.
@@ -32,7 +33,8 @@ plx fields                            # query fields
 ```
 
 Keys: `j/k` move, `l/h` open/back, `space` select, `a` select visible,
-`/` filter, `s` sort, `f` folder lens, `;` or `x` actions, `S` save query,
+`a` select all/none, `v` view selection, `/` filter, `s` sort, `f` folder
+lens, `x` or `;` actions (including delete from disk), `S` save query,
 `?` help.
 
 Selection persists across views, so you can collect items from several places

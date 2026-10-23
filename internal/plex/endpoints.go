@@ -29,6 +29,27 @@ func (c *Client) Identity(ctx context.Context) (string, error) {
 	return mc.MachineIdentifier, nil
 }
 
+// AllowsMediaDeletion reports the server's "Allow media deletion" setting,
+// without which DeleteItem is refused.
+func (c *Client) AllowsMediaDeletion(ctx context.Context) (bool, error) {
+	mc, err := c.get(ctx, "/:/prefs", nil)
+	if err != nil {
+		return false, err
+	}
+	for _, s := range mc.Setting {
+		if s.ID == "allowMediaDeletion" {
+			v, _ := s.Value.(bool)
+			return v, nil
+		}
+	}
+	return false, nil
+}
+
+// DeleteItem deletes an item and all of its media files from disk.
+func (c *Client) DeleteItem(ctx context.Context, key string) error {
+	return c.doIdem(ctx, http.MethodDelete, "/library/metadata/"+key, nil, nil)
+}
+
 func (c *Client) Sections(ctx context.Context) ([]Directory, error) {
 	mc, err := c.get(ctx, "/library/sections", nil)
 	if err != nil {

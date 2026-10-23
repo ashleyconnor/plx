@@ -30,6 +30,7 @@ type Config struct {
 	URL      string `toml:"url"`
 	Token    string `toml:"token"`
 	Insecure bool   `toml:"insecure"`
+	Icons    string `toml:"icons"` // emoji (default), ascii or none
 }
 
 // LoadConfig reads config.toml; PLEX_URL, PLEX_TOKEN and PLEX_INSECURE override it.
@@ -46,6 +47,9 @@ func LoadConfig() (Config, error) {
 	}
 	if v := os.Getenv("PLEX_INSECURE"); v != "" {
 		c.Insecure = v == "1" || strings.EqualFold(v, "true")
+	}
+	if v := os.Getenv("PLX_ICONS"); v != "" {
+		c.Icons = v
 	}
 	if c.URL == "" || c.Token == "" {
 		return c, fmt.Errorf("set url and token in %s or PLEX_URL and PLEX_TOKEN",

@@ -151,10 +151,14 @@ func HumanDuration(d time.Duration) string {
 	if d <= 0 {
 		return ""
 	}
+	d = d.Round(time.Minute)
 	h := int(d.Hours())
 	m := int(d.Minutes()) % 60
-	if h > 0 {
-		return fmt.Sprintf("%d:%02d", h, m)
+	switch {
+	case h == 0:
+		return fmt.Sprintf("%dm", max(m, 1))
+	case m == 0:
+		return fmt.Sprintf("%dh", h)
 	}
-	return fmt.Sprintf("%dm", m)
+	return fmt.Sprintf("%dh%02dm", h, m)
 }

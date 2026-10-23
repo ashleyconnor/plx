@@ -22,6 +22,13 @@ type MediaContainer struct {
 	Version             string      `json:"version"`
 	Metadata            []Metadata  `json:"Metadata"`
 	Directory           []Directory `json:"Directory"`
+	Setting             []Setting   `json:"Setting"`
+}
+
+// Setting is a server preference from /:/prefs.
+type Setting struct {
+	ID    string `json:"id"`
+	Value any    `json:"value"`
 }
 
 // Metadata is any item Plex returns: movie, episode, track, playlist, collection...
