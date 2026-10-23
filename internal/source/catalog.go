@@ -175,8 +175,10 @@ func (c *Catalog) ensureLabels(ctx context.Context, sectionID string) error {
 	}
 	idx := map[string][]string{}
 	var names []string
+	// Plex's tag list includes labels from other sections and orphaned labels
+	// no item carries any more, so only labels with items here are listed.
 	for _, t := range tags {
-		names = append(names, t.Title)
+		used := false
 		for _, typ := range types {
 			keys, err := c.C.SectionKeysWithTag(ctx, sectionID, typ, "label", t.Key)
 			if err != nil {
@@ -185,6 +187,10 @@ func (c *Catalog) ensureLabels(ctx context.Context, sectionID string) error {
 			for _, k := range keys {
 				idx[k] = append(idx[k], t.Title)
 			}
+			used = used || len(keys) > 0
+		}
+		if used {
+			names = append(names, t.Title)
 		}
 	}
 	sort.Strings(names)

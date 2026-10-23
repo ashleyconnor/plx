@@ -165,7 +165,7 @@ func (c *Client) AddToPlaylist(ctx context.Context, machineID, id string, keys [
 }
 
 func (c *Client) RemoveFromPlaylist(ctx context.Context, id, playlistItemID string) error {
-	return c.do(ctx, http.MethodDelete, "/playlists/"+id+"/items/"+playlistItemID, nil, nil)
+	return c.doIdem(ctx, http.MethodDelete, "/playlists/"+id+"/items/"+playlistItemID, nil, nil)
 }
 
 // MovePlaylistItem moves an item after another; after == "" moves it to the top.
@@ -174,11 +174,11 @@ func (c *Client) MovePlaylistItem(ctx context.Context, id, playlistItemID, after
 	if after != "" {
 		p = p.Add("after", after)
 	}
-	return c.do(ctx, http.MethodPut, "/playlists/"+id+"/items/"+playlistItemID+"/move", p, nil)
+	return c.doIdem(ctx, http.MethodPut, "/playlists/"+id+"/items/"+playlistItemID+"/move", p, nil)
 }
 
 func (c *Client) DeletePlaylist(ctx context.Context, id string) error {
-	return c.do(ctx, http.MethodDelete, "/playlists/"+id, nil, nil)
+	return c.doIdem(ctx, http.MethodDelete, "/playlists/"+id, nil, nil)
 }
 
 // CreateCollection creates a regular collection in a section from keys of one item type.
@@ -216,7 +216,7 @@ func (c *Client) AddToCollection(ctx context.Context, machineID, id string, keys
 }
 
 func (c *Client) RemoveFromCollection(ctx context.Context, id, key string) error {
-	return c.do(ctx, http.MethodDelete, "/library/collections/"+id+"/items/"+key, nil, nil)
+	return c.doIdem(ctx, http.MethodDelete, "/library/collections/"+id+"/items/"+key, nil, nil)
 }
 
 // MoveCollectionItem moves an item after another; after == "" moves it to the top.
@@ -226,7 +226,7 @@ func (c *Client) MoveCollectionItem(ctx context.Context, id, key, after string) 
 	if after != "" {
 		p = p.Add("after", after)
 	}
-	return c.do(ctx, http.MethodPut, "/library/collections/"+id+"/items/"+key+"/move", p, nil)
+	return c.doIdem(ctx, http.MethodPut, "/library/collections/"+id+"/items/"+key+"/move", p, nil)
 }
 
 // Collection sort modes for SetCollectionSort.
@@ -237,7 +237,7 @@ const (
 )
 
 func (c *Client) SetCollectionSort(ctx context.Context, id string, mode int) error {
-	return c.do(ctx, http.MethodPut, "/library/metadata/"+id+"/prefs",
+	return c.doIdem(ctx, http.MethodPut, "/library/metadata/"+id+"/prefs",
 		Params{}.Add("collectionSort", fmt.Sprint(mode)), nil)
 }
 
@@ -256,5 +256,5 @@ func (c *Client) EditTags(ctx context.Context, sectionID string, typ int, keys [
 			p = p.Add(fmt.Sprintf("%s[%d].tag.tag", tag, i), v)
 		}
 	}
-	return c.do(ctx, http.MethodPut, "/library/sections/"+sectionID+"/all", p, nil)
+	return c.doIdem(ctx, http.MethodPut, "/library/sections/"+sectionID+"/all", p, nil)
 }

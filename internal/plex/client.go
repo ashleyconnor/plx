@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -122,9 +123,37 @@ func (c *Client) do(ctx context.Context, method, path string, p Params, out any)
 	return json.Unmarshal(body, out)
 }
 
+// retryDelays are the waits between attempts of an idempotent request.
+var retryDelays = []time.Duration{500 * time.Millisecond, 1500 * time.Millisecond, 3 * time.Second}
+
+// doIdem is do with retries on network errors and 5xx responses. Plex
+// occasionally answers 500 under load (seen on playlist moves), so every
+// request that is safe to repeat goes through here. Creates and
+// add-to-playlist are not: repeating them can duplicate items.
+func (c *Client) doIdem(ctx context.Context, method, path string, p Params, out any) error {
+	err := c.do(ctx, method, path, p, out)
+	for _, d := range retryDelays {
+		var apiErr *APIError
+		if err == nil || ctx.Err() != nil || (errors.As(err, &apiErr) && apiErr.Status < 500) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(d):
+		}
+		err = c.do(ctx, method, path, p, out)
+		// A DELETE that failed with 500 may still have happened.
+		if method == http.MethodDelete && errors.As(err, &apiErr) && apiErr.Status == http.StatusNotFound {
+			return nil
+		}
+	}
+	return err
+}
+
 func (c *Client) get(ctx context.Context, path string, p Params) (*MediaContainer, error) {
 	var env envelope
-	if err := c.do(ctx, http.MethodGet, path, p, &env); err != nil {
+	if err := c.doIdem(ctx, http.MethodGet, path, p, &env); err != nil {
 		return nil, err
 	}
 	return &env.MediaContainer, nil

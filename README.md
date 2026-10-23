@@ -88,3 +88,18 @@ internal/exec    Applies plans through the client and writes the action log.
 internal/store   Config, saved queries.
 internal/tui     Bubble Tea UI.
 ```
+
+## Tests
+
+```sh
+go test ./...
+```
+
+The write path has an opt-in integration test against a real server. It
+creates and deletes scratch playlists (`plx-test`, `plx-test-2`) and adds then
+removes a `plx-test-label` label on a few items:
+
+```sh
+PLEX_URL=… PLEX_TOKEN=… PLEX_INSECURE=1 PLX_TEST_SECTION=Movies \
+  go test -tags integration ./internal/exec/ -v
+```
