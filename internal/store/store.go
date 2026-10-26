@@ -29,15 +29,50 @@ func Dir() string {
 type Config struct {
 	URL      string `toml:"url"`
 	Token    string `toml:"token"`
-	Insecure bool   `toml:"insecure"`
-	Icons    string `toml:"icons"` // emoji (default), ascii or none
+	Insecure bool   `toml:"insecure,omitempty"`
+	Icons    string `toml:"icons,omitempty"`     // emoji (default), ascii or none
+	ClientID string `toml:"client_id,omitempty"` // plx's device ID, set by plx login
+}
+
+func configPath() string { return filepath.Join(Dir(), "config.toml") }
+
+// ErrNotConfigured means there's no server URL or token yet.
+var ErrNotConfigured = errors.New("not signed in")
+
+// ReadConfigFile reads config.toml alone, without environment overrides.
+func ReadConfigFile() (Config, error) {
+	var c Config
+	if _, err := toml.DecodeFile(configPath(), &c); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return c, fmt.Errorf("config.toml: %w", err)
+	}
+	return c, nil
+}
+
+// SaveConfig writes config.toml, readable only by the user since it holds
+// the token. Comments in a hand-written file are not kept.
+func SaveConfig(c Config) error {
+	if err := os.MkdirAll(Dir(), 0o700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(configPath()+".tmp", os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if err := toml.NewEncoder(f).Encode(c); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(configPath()+".tmp", configPath())
 }
 
 // LoadConfig reads config.toml; PLEX_URL, PLEX_TOKEN and PLEX_INSECURE override it.
 func LoadConfig() (Config, error) {
-	var c Config
-	if _, err := toml.DecodeFile(filepath.Join(Dir(), "config.toml"), &c); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return c, fmt.Errorf("config.toml: %w", err)
+	c, err := ReadConfigFile()
+	if err != nil {
+		return c, err
 	}
 	if v := os.Getenv("PLEX_URL"); v != "" {
 		c.URL = v
@@ -52,8 +87,8 @@ func LoadConfig() (Config, error) {
 		c.Icons = v
 	}
 	if c.URL == "" || c.Token == "" {
-		return c, fmt.Errorf("set url and token in %s or PLEX_URL and PLEX_TOKEN",
-			filepath.Join(Dir(), "config.toml"))
+		return c, fmt.Errorf("%w: run plx login, or set url and token in %s or PLEX_URL and PLEX_TOKEN",
+			ErrNotConfigured, configPath())
 	}
 	return c, nil
 }

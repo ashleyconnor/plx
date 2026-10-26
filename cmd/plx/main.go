@@ -1,6 +1,7 @@
 // Command plx is a terminal UI for managing a Plex library.
 //
-//	plx                         open the TUI
+//	plx                         open the TUI (signing in first if needed)
+//	plx login                   sign in to Plex and choose a server
 //	plx ls                      list sources
 //	plx q <source> [query...]   print items matching a query
 //	plx fields                  list query fields
@@ -8,6 +9,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -33,12 +35,19 @@ func run(args []string) error {
 		printFields()
 		return nil
 	}
+	ctx := context.Background()
+	if len(args) > 0 && args[0] == "login" {
+		_, err := login(ctx)
+		return err
+	}
 	cfg, err := store.LoadConfig()
+	if errors.Is(err, store.ErrNotConfigured) && len(args) == 0 {
+		cfg, err = login(ctx)
+	}
 	if err != nil {
 		return err
 	}
-	cat := source.NewCatalog(plex.New(cfg.URL, cfg.Token, plex.Options{Insecure: cfg.Insecure}))
-	ctx := context.Background()
+	cat := source.NewCatalog(plex.New(cfg.URL, cfg.Token, plex.Options{Insecure: cfg.Insecure, ClientID: cfg.ClientID}))
 
 	if len(args) == 0 {
 		return tui.Run(cat, tui.Options{Icons: cfg.Icons})

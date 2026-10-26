@@ -12,7 +12,16 @@ from, and act on in bulk. The Plex web UI can't do most of this.
 go install github.com/ashleyconnor/plx/cmd/plx@latest
 ```
 
-Configure with `~/.config/plx/config.toml`:
+Run `plx` and sign in the way a TV app does: it shows a 4-character code and
+a QR code; scan it with your phone, or go to plex.tv/link and enter the
+code. plx then lists your servers (asking which, if there's more than one),
+finds an address that answers (local first, over HTTPS with the server's
+plex.direct certificate) and saves it with the server's access token to
+`~/.config/plx/config.toml` (mode 0600). `plx login` does it again, for
+example to switch servers. plx appears in Plex's Authorized Devices, where
+you can revoke it.
+
+Or configure by hand, in `config.toml`:
 
 ```toml
 url = "192.168.1.10:32400"   # https:// is assumed if no scheme
@@ -21,12 +30,15 @@ insecure = true              # skip TLS verification (self-signed certs)
 icons = "emoji"              # emoji (default), ascii or none
 ```
 
-or with the `PLEX_URL`, `PLEX_TOKEN` and `PLEX_INSECURE` environment variables.
+or with the `PLEX_URL`, `PLEX_TOKEN` and `PLEX_INSECURE` environment
+variables, which override the file. `plx login` rewrites the file, so
+comments in it aren't kept.
 
 ## Use
 
 ```sh
-plx                                   # TUI
+plx                                   # TUI (signs in first if needed)
+plx login                             # sign in again or switch servers
 plx ls                                # list sources
 plx q playlist:Watchlist -is:watched  # query from the shell
 plx fields                            # query fields
@@ -140,4 +152,11 @@ removes a `plx-test-label` label on a few items:
 ```sh
 PLEX_URL=… PLEX_TOKEN=… PLEX_INSECURE=1 PLX_TEST_SECTION=Movies \
   go test -tags integration ./internal/exec/ -v
+```
+
+Server discovery has a read-only one, with an account token: it lists the
+account's servers and connects to the first.
+
+```sh
+PLEX_TOKEN=… go test -tags integration ./internal/plex/ -run TestServersAndConnect -v
 ```

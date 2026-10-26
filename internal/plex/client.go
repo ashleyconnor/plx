@@ -25,6 +25,7 @@ type Client struct {
 type Options struct {
 	Insecure bool // skip TLS verification (self-signed / plex.direct certs)
 	Timeout  time.Duration
+	ClientID string // X-Plex-Client-Identifier; default "plx"
 }
 
 // New builds a client. baseURL may omit the scheme, in which case https is used.
@@ -39,10 +40,13 @@ func New(baseURL, token string, opts Options) *Client {
 	if opts.Insecure {
 		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	}
+	if opts.ClientID == "" {
+		opts.ClientID = "plx"
+	}
 	return &Client{
 		base:     strings.TrimRight(baseURL, "/"),
 		token:    token,
-		clientID: "plx",
+		clientID: opts.ClientID,
 		hc:       &http.Client{Timeout: opts.Timeout, Transport: tr},
 	}
 }
