@@ -11,6 +11,8 @@ are hard to find. In plx every library, playlist, collection, label and saved
 query is a list of items with the same tools: filter, sort, browse by
 folder, select, and act on the selection.
 
+![plx showing the sources sidebar, a filtered list of TV episodes and the details pane with a poster](docs/overview.png)
+
 ## Goals
 
 1. **Manage media in bulk.** Select many items from anywhere and act on all
