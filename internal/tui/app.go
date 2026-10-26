@@ -1,6 +1,6 @@
-// Package tui is plx's Bubble Tea interface: an nnn-style browser where every
-// playlist, collection, label, library and saved query is a list of items
-// with the same filter, sort, select and act workflow.
+// Package tui is plx's Bubble Tea interface: a three-pane browser where
+// every playlist, collection, label, library and saved query is a list of
+// items with the same filter, sort, select and act workflow.
 package tui
 
 import (

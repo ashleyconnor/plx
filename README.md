@@ -1,16 +1,64 @@
 # plx
 
-An nnn-style terminal UI for managing a Plex library through the Plex API.
+plx manages a Plex Media Server library from the terminal: bulk changes to
+playlists, collections and labels, finding and deleting files, and
+inspecting what's on disk. It talks to the server only through the Plex API.
 
-Libraries, playlists, collections, labels and saved queries all work the same
-way: each is a list of items you can filter, sort, browse by folder, select
-from, and act on in bulk. The Plex web UI can't do most of this.
+The Plex web UI handles one item at a time and treats each place differently:
+playlists can't be filtered or sorted, collections can't be split, you can't
+filter on two labels at once or drill into folders, and duplicate versions
+are hard to find. In plx every library, playlist, collection, label and saved
+query is a list of items with the same tools: filter, sort, browse by
+folder, select, and act on the selection.
 
-## Setup
+## Goals
+
+1. **Manage media in bulk.** Select many items from anywhere and act on all
+   of them at once: playlists, collections, labels, deleting files and
+   versions, and inspecting files, streams and metadata.
+2. **One model for every source.** Libraries, playlists, collections, labels
+   and saved queries behave the same way; an action that works on one works
+   on all, within Plex's rules.
+3. **Safe by default.** Every change is previewed before it runs, file
+   deletion defaults to No, Plex's restrictions are checked before anything
+   is sent, and every change is logged.
+4. **Plex API only.** No SSH or filesystem access; plx works wherever the
+   server is reachable and can do only what the API allows.
+5. **A small terminal tool.** One Go binary with few dependencies, usable
+   from the TUI or scripted from the shell.
+
+[CONTRIBUTING.md](CONTRIBUTING.md) covers what's in scope.
+
+## Features
+
+- Three-pane TUI: sources, the item list, and the highlighted item's details
+  with its poster.
+- A filter language with autocomplete: several labels at once, sizes,
+  durations, ages, paths at any depth, membership (`-has:playlist`), and
+  versions (`dur.min<5m` finds samples).
+- Sort any list, including playlists and collections, by any field; save
+  the order back to Plex.
+- Folder lens: browse any list as its folder tree at any depth.
+- Selection that persists across lists; review it as a list of its own.
+- Actions: add to or remove from playlists and collections, create new ones
+  from the selection, move items between them, add and remove labels,
+  delete items or individual versions from disk.
+- Saved queries in a TOML file, shown as sources.
+- `plx q` prints any query's results for scripts.
+- Sign in with a plex.tv/link code or QR code; no token hunting.
+
+## Install
+
+Requires Go 1.24 or later and a Plex Media Server.
 
 ```sh
 go install github.com/ashleyconnor/plx/cmd/plx@latest
 ```
+
+Deleting files needs the server setting Settings → Library → *Allow media
+deletion*; plx checks it before offering a deletion.
+
+## Sign in
 
 Run `plx` and sign in the way a TV app does: it shows a 4-character code and
 a QR code; scan it with your phone, or go to plex.tv/link and enter the
@@ -127,7 +175,7 @@ columns = ["size", "duration", "labels"]
 Sources can be `section`, `playlist`, `collection` (with optional `section`),
 or `label` with `section`. A query with several sources shows their union.
 
-## Layout
+## Code layout
 
 ```
 internal/plex    HTTP client and DTOs that mirror Plex's JSON. No logic.
@@ -162,3 +210,24 @@ account's servers and connects to the first.
 ```sh
 PLEX_TOKEN=… go test -tags integration ./internal/plex/ -run TestServersAndConnect -v
 ```
+
+## Built with
+
+| Library | Used for |
+| --- | --- |
+| [Bubble Tea](https://github.com/charmbracelet/bubbletea) | the TUI event loop |
+| [Bubbles](https://github.com/charmbracelet/bubbles) | text input and spinner |
+| [Lip Gloss](https://github.com/charmbracelet/lipgloss) | styling, tables and layout |
+| [x/ansi](https://github.com/charmbracelet/x) | measuring and trimming styled text |
+| [go-runewidth](https://github.com/mattn/go-runewidth) | column widths for wide characters |
+| [BurntSushi/toml](https://github.com/BurntSushi/toml) | config and saved queries |
+| [rsc.io/qr](https://pkg.go.dev/rsc.io/qr) | the sign-in QR code |
+
+The Plex client is written for plx against Plex's JSON API; endpoints were
+worked out with reference to [python-plexapi](https://github.com/pushingkarmaorg/python-plexapi).
+
+## Contributing
+
+Contributions are welcome when they fit the [goals](#goals); see
+[CONTRIBUTING.md](CONTRIBUTING.md). Changes are recorded in
+[CHANGELOG.md](CHANGELOG.md).
