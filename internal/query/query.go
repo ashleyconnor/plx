@@ -329,12 +329,34 @@ func strMatcher(op, v string, contains bool) (func(string) bool, error) {
 	return nil, fmt.Errorf("bad operator %q", op)
 }
 
+// rankMatcher compares by the field's rank order instead of text. Values
+// with no known rank never satisfy an ordering comparison.
+func rankMatcher(f *field.Field, op, lit string) (func(string) bool, error) {
+	want, ok := f.Rank(lit)
+	if !ok {
+		return nil, fmt.Errorf("unknown %s %q (try %s)", f.Name, lit, f.Hint)
+	}
+	return func(s string) bool {
+		got, ok := f.Rank(s)
+		if !ok {
+			return false
+		}
+		r, _ := cmpInt(op, int64(got), int64(want))
+		return r
+	}, nil
+}
+
 func compileString(f *field.Field, op string, vals []string) (func(*model.Item) bool, error) {
 	var preds []func(*model.Item) bool
 	for _, v := range vals {
 		m, err := strMatcher(op, v, true)
 		if err != nil {
 			return nil, err
+		}
+		if f.Rank != nil && (op == ">" || op == ">=" || op == "<" || op == "<=") {
+			if m, err = rankMatcher(f, op, v); err != nil {
+				return nil, err
+			}
 		}
 		if f.Strs != nil { // per-version field: any version matches
 			preds = append(preds, func(it *model.Item) bool {
@@ -457,19 +479,30 @@ func compileTime(f *field.Field, op string, vals []string) (func(*model.Item) bo
 	var preds []func(*model.Item) bool
 	for _, v := range vals {
 		if t, err := time.ParseInLocation("2006-01-02", v, time.Local); err == nil {
-			ts := t.Unix()
-			if op == ":" || op == "=" {
-				lo, hi := ts, t.AddDate(0, 0, 1).Unix()
-				preds = append(preds, func(it *model.Item) bool { n := f.Num(it); return n >= lo && n < hi })
-				continue
-			}
+			// A date means the whole local calendar day [lo, hi). The end is the
+			// next day's start, so days of 23 or 25 hours (DST) are exact.
+			lo, hi := t.Unix(), t.AddDate(0, 0, 1).Unix()
 			preds = append(preds, func(it *model.Item) bool {
 				n := f.Num(it)
-				if n == 0 {
+				switch op {
+				case ":", "=":
+					return n >= lo && n < hi
+				case "!=":
+					return n < lo || n >= hi
+				}
+				if n == 0 { // no date: never after or before a date
 					return false
 				}
-				ok, _ := cmpInt(op, n, ts)
-				return ok
+				switch op {
+				case ">":
+					return n >= hi
+				case ">=":
+					return n >= lo
+				case "<":
+					return n < lo
+				default: // "<="
+					return n < hi
+				}
 			})
 			continue
 		}
@@ -507,23 +540,34 @@ func ParseBytes(s string) (int64, error) {
 		}
 	}
 	f, err := strconv.ParseFloat(u, 64)
-	if err != nil || f < 0 {
+	if err != nil || f < 0 || !fitsInt64(f*float64(mult)) { // also rejects nan and inf
 		return 0, fmt.Errorf("expected a size like 4G or 500M, got %q", s)
 	}
 	return int64(f * float64(mult)), nil
 }
 
+// fitsInt64 reports whether f is a finite number that converts to an int64
+// without overflowing (NaN fails every comparison).
+func fitsInt64(f float64) bool { return f >= -(1<<63) && f < 1<<63 }
+
 // ParseDuration accepts Go durations plus d, w and y units; a bare number
 // is interpreted in the given unit.
 func ParseDuration(s string, bare time.Duration) (time.Duration, error) {
 	s = strings.ToLower(strings.TrimSpace(s))
+	bad := fmt.Errorf("expected a duration like 90m, 2h or 30d, got %q", s)
 	if n, err := strconv.ParseFloat(s, 64); err == nil {
+		if !fitsInt64(n * float64(bare)) {
+			return 0, bad
+		}
 		return time.Duration(n * float64(bare)), nil
 	}
 	units := map[byte]time.Duration{'d': 24 * time.Hour, 'w': 7 * 24 * time.Hour, 'y': 365 * 24 * time.Hour}
 	if len(s) > 1 {
 		if u, ok := units[s[len(s)-1]]; ok {
 			if n, err := strconv.ParseFloat(s[:len(s)-1], 64); err == nil {
+				if !fitsInt64(n * float64(u)) {
+					return 0, bad
+				}
 				return time.Duration(n * float64(u)), nil
 			}
 		}

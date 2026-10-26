@@ -35,7 +35,12 @@ func (s Library) load(ctx context.Context, c *Catalog) ([]*model.Item, error) {
 // Members lists a playlist's or collection's items.
 type Members struct{ C *model.Container }
 
-func (s Members) ID() string                  { return s.C.Kind.String() + ":" + s.C.ID }
+func (s Members) ID() string {
+	if s.C.Kind == model.Label { // a label name is only unique within its library
+		return "label:" + s.C.SectionID + ":" + s.C.ID
+	}
+	return s.C.Kind.String() + ":" + s.C.ID
+}
 func (s Members) Title() string               { return s.C.Title }
 func (s Members) Container() *model.Container { return s.C }
 func (s Members) load(ctx context.Context, c *Catalog) ([]*model.Item, error) {

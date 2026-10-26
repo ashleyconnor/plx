@@ -85,7 +85,8 @@ var (
 	Versions = register(&Field{Name: "versions", Type: Int, Doc: "number of versions (versions>1: has duplicates or samples)",
 		Num: func(i *model.Item) int64 { return int64(len(i.Versions)) }})
 	Res = register(&Field{Enum: true, Name: "res", Aliases: []string{"resolution"}, Type: String, Doc: "video resolution: sd, 720, 1080, 4k (any version)", Width: 5,
-		Str: func(i *model.Item) string { return i.Resolution }, Strs: versionStrs(func(v *model.Version) string { return v.Resolution })})
+		Str: func(i *model.Item) string { return i.Resolution }, Strs: versionStrs(func(v *model.Version) string { return v.Resolution }),
+		Rank: ResolutionRank, Hint: "sd, 480, 576, 720, 1080, 2k, 4k or 8k"})
 	Codec = register(&Field{Enum: true, Name: "codec", Type: String, Doc: "video codec (any version)",
 		Str: func(i *model.Item) string { return i.VideoCodec }, Strs: versionStrs(func(v *model.Version) string { return v.VideoCodec })})
 	Container = register(&Field{Enum: true, Name: "container", Aliases: []string{"ext"}, Type: String, Doc: "file container: mkv, mp4, avi (any version)",

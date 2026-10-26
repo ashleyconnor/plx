@@ -26,6 +26,12 @@ type Device struct {
 	ID      string
 	Product string
 	Version string
+
+	// BaseURL is plex.tv's address; "" means https://plex.tv. HTTP is the
+	// client used for plex.tv requests; nil means http.DefaultClient. Both
+	// exist so tests can point a Device at a local server.
+	BaseURL string
+	HTTP    *http.Client
 }
 
 func (d Device) setHeaders(h http.Header) {
@@ -75,7 +81,11 @@ func (r Resource) IsServer() bool {
 }
 
 func (d Device) call(ctx context.Context, method, path, token string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, method, plexTV+path, nil)
+	base := d.BaseURL
+	if base == "" {
+		base = plexTV
+	}
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(base, "/")+path, nil)
 	if err != nil {
 		return err
 	}
@@ -83,7 +93,11 @@ func (d Device) call(ctx context.Context, method, path, token string, out any) e
 	if token != "" {
 		req.Header.Set("X-Plex-Token", token)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	hc := d.HTTP
+	if hc == nil {
+		hc = http.DefaultClient
+	}
+	resp, err := hc.Do(req)
 	if err != nil {
 		return err
 	}
