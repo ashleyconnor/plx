@@ -37,12 +37,12 @@ func run(args []string) error {
 	}
 	ctx := context.Background()
 	if len(args) > 0 && args[0] == "login" {
-		_, err := login(ctx)
+		_, err := login(ctx, defaultLoginEnv())
 		return err
 	}
 	cfg, err := store.LoadConfig()
 	if errors.Is(err, store.ErrNotConfigured) && len(args) == 0 {
-		cfg, err = login(ctx)
+		cfg, err = login(ctx, defaultLoginEnv())
 	}
 	if err != nil {
 		return err

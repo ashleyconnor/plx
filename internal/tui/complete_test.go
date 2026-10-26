@@ -48,3 +48,28 @@ func TestComplete(t *testing.T) {
 		t.Errorf("start = %d", s)
 	}
 }
+
+func TestCompleteNumericValuesAndTabSeparatedTokens(t *testing.T) {
+	items := []*model.Item{{Year: 1999}, {Year: 1999}, {Year: 1980}, {}}
+	// numeric enum fields suggest the values present, most common first; zero means unknown and is skipped
+	if got := inserts(complete("year:", items)); got != "year:1999|year:1980" {
+		t.Errorf("year: = %q", got)
+	}
+	if got := inserts(complete("year:19", items)); got != "year:1999|year:1980" {
+		t.Errorf("year:19 = %q", got)
+	}
+	// a tab separates tokens like a space does
+	if s := complete("size>4G\tlab", items).start; s != len("size>4G\t") {
+		t.Errorf("start = %d", s)
+	}
+	// spaces inside quotes belong to the token
+	if s := complete(`label:"to wa`, items).start; s != 0 {
+		t.Errorf("start inside quote = %d", s)
+	}
+	if got := inserts(complete("", items)); got == "" {
+		t.Error("an empty filter suggests the field names")
+	}
+	if got := inserts(complete("alien ", items)); got != "" {
+		t.Errorf("after a space with no token: %q", got)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strconv"
@@ -21,9 +22,26 @@ import (
 
 const version = "0.1"
 
+// loginEnv is everything login touches outside itself, so tests can drive it.
+type loginEnv struct {
+	in     io.Reader
+	out    io.Writer
+	device func(clientID string) plex.Device // the plex.tv client
+	poll   time.Duration                     // how often the PIN is checked
+	qr     bool                              // draw the QR code
+}
+
+func defaultLoginEnv() loginEnv {
+	return loginEnv{
+		in: os.Stdin, out: os.Stdout, poll: 2 * time.Second, qr: true,
+		device: func(id string) plex.Device { return plex.Device{ID: id, Product: "plx", Version: version} },
+	}
+}
+
 // login links plx to the user's Plex account with a PIN, picks a server and
 // saves its address and access token to config.toml.
-func login(ctx context.Context) (store.Config, error) {
+func login(ctx context.Context, env loginEnv) (store.Config, error) {
+	out := env.out
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt)
 	defer stop()
 
@@ -36,7 +54,7 @@ func login(ctx context.Context) (store.Config, error) {
 		rand.Read(b)
 		cfg.ClientID = hex.EncodeToString(b)
 	}
-	dev := plex.Device{ID: cfg.ClientID, Product: "plx", Version: version}
+	dev := env.device(cfg.ClientID)
 
 	var token string
 	for token == "" {
@@ -44,17 +62,19 @@ func login(ctx context.Context) (store.Config, error) {
 		if err != nil {
 			return cfg, err
 		}
-		fmt.Println()
-		fmt.Println("Sign in to Plex: scan the code, or go to plex.tv/link and enter")
-		fmt.Println()
-		fmt.Printf("    %s\n\n", pin.Code)
-		if q, err := qrBlocks(pin.LinkURL()); err == nil {
-			fmt.Println(q)
+		fmt.Fprintln(out)
+		fmt.Fprintln(out, "Sign in to Plex: scan the code, or go to plex.tv/link and enter")
+		fmt.Fprintln(out)
+		fmt.Fprintf(out, "    %s\n\n", pin.Code)
+		if env.qr {
+			if q, err := qrBlocks(pin.LinkURL()); err == nil {
+				fmt.Fprintln(out, q)
+			}
 		}
-		fmt.Println("Waiting… (ctrl+c to cancel)")
-		token, err = dev.WaitForToken(ctx, pin, 2*time.Second)
+		fmt.Fprintln(out, "Waiting… (ctrl+c to cancel)")
+		token, err = dev.WaitForToken(ctx, pin, env.poll)
 		if errors.Is(err, plex.ErrPinExpired) {
-			fmt.Println("The code expired; here's a new one.")
+			fmt.Fprintln(out, "The code expired; here's a new one.")
 			continue
 		}
 		if err != nil {
@@ -71,11 +91,11 @@ func login(ctx context.Context) (store.Config, error) {
 	}
 	srv := servers[0]
 	if len(servers) > 1 {
-		if srv, err = chooseServer(servers); err != nil {
+		if srv, err = chooseServer(env.in, out, servers); err != nil {
 			return cfg, err
 		}
 	}
-	fmt.Printf("Connecting to %s…\n", srv.Name)
+	fmt.Fprintf(out, "Connecting to %s…\n", srv.Name)
 	url, err := dev.Connect(ctx, srv)
 	if err != nil {
 		return cfg, err
@@ -84,35 +104,35 @@ func login(ctx context.Context) (store.Config, error) {
 	if err := store.SaveConfig(cfg); err != nil {
 		return cfg, err
 	}
-	fmt.Printf("Signed in to %s at %s; saved to %s/config.toml\n", srv.Name, url, store.Dir())
-	var env []string
+	fmt.Fprintf(out, "Signed in to %s at %s; saved to %s/config.toml\n", srv.Name, url, store.Dir())
+	var set []string
 	for _, k := range []string{"PLEX_URL", "PLEX_TOKEN", "PLEX_INSECURE"} {
 		if os.Getenv(k) != "" {
-			env = append(env, k)
+			set = append(set, k)
 		}
 	}
-	if len(env) > 0 {
+	if len(set) > 0 {
 		verb := "overrides"
-		if len(env) > 1 {
+		if len(set) > 1 {
 			verb = "override"
 		}
-		fmt.Printf("Note: %s set in your environment %s config.toml.\n", strings.Join(env, ", "), verb)
+		fmt.Fprintf(out, "Note: %s set in your environment %s config.toml.\n", strings.Join(set, ", "), verb)
 	}
 	return cfg, nil
 }
 
-func chooseServer(servers []plex.Resource) (plex.Resource, error) {
-	fmt.Println("\nServers:")
+func chooseServer(r io.Reader, out io.Writer, servers []plex.Resource) (plex.Resource, error) {
+	fmt.Fprintln(out, "\nServers:")
 	for i, s := range servers {
 		owner := ""
 		if !s.Owned {
 			owner = " (shared with you)"
 		}
-		fmt.Printf("  %d. %s%s\n", i+1, s.Name, owner)
+		fmt.Fprintf(out, "  %d. %s%s\n", i+1, s.Name, owner)
 	}
-	in := bufio.NewScanner(os.Stdin)
+	in := bufio.NewScanner(r)
 	for {
-		fmt.Print("Use which? [1] ")
+		fmt.Fprint(out, "Use which? [1] ")
 		if !in.Scan() {
 			return plex.Resource{}, fmt.Errorf("no server chosen")
 		}

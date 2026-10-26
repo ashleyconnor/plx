@@ -37,3 +37,15 @@ First release.
 - Certificate verification for bare-IP HTTPS URLs against the server's
   plex.direct certificate, so `insecure` is rarely needed.
 - Emoji, ASCII or no icons.
+
+### Fixed
+
+- A label with the same name in two libraries no longer shows the first
+  library's items when you open the second.
+- Date filters now mean the whole day: `added>2024-01-15` is after that day,
+  `added<=2024-01-15` up to its end, and `=`/`!=` are exact opposites.
+- `res>=720`, `res<1080` and the like compare resolutions in order (sd, 480,
+  576, 720, 1080, 2k, 4k, 8k) instead of as text, and an unknown resolution
+  is reported.
+- Sizes and durations such as `size>inf` or `added<nan` are rejected with an
+  error instead of silently matching the wrong items.

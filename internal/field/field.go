@@ -6,6 +6,7 @@ package field
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -50,6 +51,12 @@ type Field struct {
 	Min  func(*model.Item) int64
 	Strs func(*model.Item) []string
 
+	// Rank orders a String field's values for <, <=, > and >= (equality and
+	// ":" still compare text). ok is false for a value with no known rank.
+	// Hint is shown when a query names a value that has none.
+	Rank func(value string) (rank int, ok bool)
+	Hint string
+
 	Width int // column width; 0 = not shown as a column by default
 
 	// Enum marks fields with a small set of values worth suggesting in
@@ -86,16 +93,6 @@ func (f *Field) Format(it *model.Item) string {
 		return f.Str(it)
 	case List:
 		return strings.Join(f.List(it), ",")
-	case Int:
-		n := f.Num(it)
-		if n == 0 {
-			return ""
-		}
-		return fmt.Sprint(n)
-	case Bytes:
-		return HumanBytes(f.Num(it))
-	case Duration:
-		return HumanDuration(time.Duration(f.Num(it)))
 	case Time:
 		n := f.Num(it)
 		if n == 0 {
@@ -187,6 +184,28 @@ func All() []*Field {
 	out := append([]*Field(nil), all...)
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
+}
+
+// ResolutionRank orders video resolutions: sd < 480 < 576 < 720 < 1080 < 2k
+// < 4k < 8k. Plain numbers rank by value (the picture height), so "1440"
+// equals "2k" and "2160" equals "4k".
+func ResolutionRank(v string) (int, bool) {
+	v = strings.ToLower(strings.TrimSpace(v))
+	switch v {
+	case "sd":
+		return 1, true
+	case "2k":
+		return 1440, true
+	case "4k":
+		return 2160, true
+	case "8k":
+		return 4320, true
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 func HumanBytes(n int64) string {
