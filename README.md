@@ -231,3 +231,7 @@ worked out with reference to [python-plexapi](https://github.com/pushingkarmaorg
 Contributions are welcome when they fit the [goals](#goals); see
 [CONTRIBUTING.md](CONTRIBUTING.md). Changes are recorded in
 [CHANGELOG.md](CHANGELOG.md).
+
+## License
+
+[MIT](LICENSE)
