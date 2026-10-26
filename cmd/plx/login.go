@@ -47,7 +47,7 @@ func login(ctx context.Context) (store.Config, error) {
 		fmt.Println()
 		fmt.Println("Sign in to Plex: scan the code, or go to plex.tv/link and enter")
 		fmt.Println()
-		fmt.Printf("    %s\n\n", strings.Join(strings.Split(pin.Code, ""), " "))
+		fmt.Printf("    %s\n\n", pin.Code)
 		if q, err := qrBlocks(pin.LinkURL()); err == nil {
 			fmt.Println(q)
 		}
@@ -85,6 +85,19 @@ func login(ctx context.Context) (store.Config, error) {
 		return cfg, err
 	}
 	fmt.Printf("Signed in to %s at %s; saved to %s/config.toml\n", srv.Name, url, store.Dir())
+	var env []string
+	for _, k := range []string{"PLEX_URL", "PLEX_TOKEN", "PLEX_INSECURE"} {
+		if os.Getenv(k) != "" {
+			env = append(env, k)
+		}
+	}
+	if len(env) > 0 {
+		verb := "overrides"
+		if len(env) > 1 {
+			verb = "override"
+		}
+		fmt.Printf("Note: %s set in your environment %s config.toml.\n", strings.Join(env, ", "), verb)
+	}
 	return cfg, nil
 }
 

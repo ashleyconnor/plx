@@ -2,7 +2,6 @@ package plex
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -37,9 +36,7 @@ func New(baseURL, token string, opts Options) *Client {
 		opts.Timeout = 120 * time.Second
 	}
 	tr := http.DefaultTransport.(*http.Transport).Clone()
-	if opts.Insecure {
-		tr.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	}
+	tr.TLSClientConfig = tlsConfigFor(baseURL, opts.Insecure)
 	if opts.ClientID == "" {
 		opts.ClientID = "plx"
 	}
@@ -144,7 +141,7 @@ func (c *Client) doIdem(ctx context.Context, method, path string, p Params, out 
 	for _, d := range retryDelays {
 		var apiErr *APIError
 		var urlErr *url.Error
-		transient := (errors.As(err, &apiErr) && apiErr.Status >= 500) || errors.As(err, &urlErr)
+		transient := (errors.As(err, &apiErr) && apiErr.Status >= 500) || (errors.As(err, &urlErr) && !isCertError(err))
 		if err == nil || ctx.Err() != nil || !transient {
 			return err
 		}

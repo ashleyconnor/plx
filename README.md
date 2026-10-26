@@ -31,7 +31,9 @@ icons = "emoji"              # emoji (default), ascii or none
 ```
 
 or with the `PLEX_URL`, `PLEX_TOKEN` and `PLEX_INSECURE` environment
-variables, which override the file. `plx login` rewrites the file, so
+variables, which override the file. An `https://` URL with a bare IP works
+without `insecure`: plx accepts the server's plex.direct certificate for that
+IP, which is what Plex serves. `plx login` rewrites the file, so
 comments in it aren't kept.
 
 ## Use
