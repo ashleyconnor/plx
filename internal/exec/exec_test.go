@@ -108,6 +108,14 @@ func TestRequestsPerOp(t *testing.T) {
 		{"delete versions", plan.Op{Kind: plan.OpDeleteVersion, Items: []*model.Item{item("1", ""), item("2", "")},
 			Versions: []model.Version{{MediaID: "11"}, {MediaID: "22"}}},
 			[]string{"DELETE /library/metadata/1/media/11?", "DELETE /library/metadata/2/media/22?"}},
+		{"rename playlist", plan.Op{Kind: plan.OpRename, Target: pl, Title: "New name"},
+			[]string{"PUT /playlists/50?title=New%20name"}},
+		{"rename collection", plan.Op{Kind: plan.OpRename, Target: coll, Title: "Sci-fi"},
+			[]string{"PUT /library/sections/1/all?type=18&id=60&title.value=Sci-fi&title.locked=1"}},
+		{"delete playlist", plan.Op{Kind: plan.OpDeleteContainer, Target: pl},
+			[]string{"DELETE /playlists/50?"}},
+		{"delete collection", plan.Op{Kind: plan.OpDeleteContainer, Target: coll},
+			[]string{"DELETE /library/collections/60?"}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -191,6 +199,8 @@ func TestRunRejectsOpsForWrongContainer(t *testing.T) {
 		"add":     {Kind: plan.OpAdd, Target: label, Items: []*model.Item{item("1", "")}},
 		"remove":  {Kind: plan.OpRemove, Target: label, Items: []*model.Item{item("1", "")}},
 		"move":    {Kind: plan.OpMove, Target: label, Items: []*model.Item{item("1", "")}},
+		"rename":  {Kind: plan.OpRename, Target: label, Title: "y"},
+		"delete":  {Kind: plan.OpDeleteContainer, Target: label},
 		"unknown": {Kind: plan.OpKind(99)},
 	} {
 		e, rec := newServer(t)

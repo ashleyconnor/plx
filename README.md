@@ -45,6 +45,7 @@ folder, select, and act on the selection.
 - Actions: add to or remove from playlists and collections, create new ones
   from the selection, move items between them, add and remove labels,
   delete items or individual versions from disk.
+- Rename and delete playlists and collections from the sources sidebar.
 - Saved queries in a TOML file, shown as sources.
 - `plx q` prints any query's results for scripts.
 - Sign in with a plex.tv/link code or QR code; no token hunting.
@@ -106,13 +107,16 @@ sidebar.
 Keys: `j/k` move, `l/h` open/back (`h` at the top of a list returns to the
 sources), `space` select, `a` select all/none, `v` view selection, `/`
 filter, `s` sort, `f` folder lens, `x` or `;` actions (including delete from
-disk), `S` save query, `?` help.
+disk), `S` save query, `?` help. In the sources sidebar, `R` renames and
+`D` deletes the playlist or collection under the cursor (its items stay in
+the library).
 
 Selection persists across views, so you can collect items from several places
 and act on all of them at once. Every action shows a preview first: what will
 change, what gets skipped and why, then **No (n)** / **Yes (y)** buttons
 (`y`/`n` act at once; `←→` and `enter` work too). Focus starts on Yes,
-except for anything that deletes files, which starts on No. Changes are logged to
+except for anything that deletes files or a playlist or collection, which
+starts on No. Changes are logged to
 `~/.config/plx/actions.log`.
 
 ## Filter language

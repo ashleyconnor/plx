@@ -318,6 +318,9 @@ func TestDeleteEndpointsAndSort(t *testing.T) {
 	c.SetCollectionSort(bg, "4", CollectionSortAlpha)
 	c.RemoveFromCollection(bg, "5", "6")
 	c.MoveCollectionItem(bg, "5", "6", "")
+	c.RenamePlaylist(bg, "3", "Road trip")
+	c.DeleteCollection(bg, "5")
+	c.RenameCollection(bg, "1", "5", "Sci-fi")
 	var lines []string
 	for _, r := range got() {
 		lines = append(lines, r.method+" "+r.path+"?"+r.query)
@@ -329,6 +332,9 @@ func TestDeleteEndpointsAndSort(t *testing.T) {
 		"PUT /library/metadata/4/prefs?collectionSort=1",
 		"DELETE /library/collections/5/items/6?",
 		"PUT /library/collections/5/items/6/move?",
+		"PUT /playlists/3?title=Road%20trip",
+		"DELETE /library/collections/5?",
+		"PUT /library/sections/1/all?type=18&id=5&title.value=Sci-fi&title.locked=1",
 	}
 	if strings.Join(lines, "\n") != strings.Join(want, "\n") {
 		t.Errorf("got\n%s\nwant\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))

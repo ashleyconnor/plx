@@ -229,6 +229,23 @@ func (c *Client) DeletePlaylist(ctx context.Context, id string) error {
 	return c.doIdem(ctx, http.MethodDelete, "/playlists/"+id, nil, nil)
 }
 
+func (c *Client) RenamePlaylist(ctx context.Context, id, title string) error {
+	return c.doIdem(ctx, http.MethodPut, "/playlists/"+id, Params{}.Add("title", title), nil)
+}
+
+// DeleteCollection deletes a collection; its items are not touched.
+func (c *Client) DeleteCollection(ctx context.Context, id string) error {
+	return c.doIdem(ctx, http.MethodDelete, "/library/collections/"+id, nil, nil)
+}
+
+// RenameCollection sets and locks a collection's title. Collections are
+// edited like any other item in their section.
+func (c *Client) RenameCollection(ctx context.Context, sectionID, id, title string) error {
+	p := Params{}.Add("type", fmt.Sprint(SearchType["collection"])).Add("id", id).
+		Add("title.value", title).Add("title.locked", "1")
+	return c.doIdem(ctx, http.MethodPut, "/library/sections/"+sectionID+"/all", p, nil)
+}
+
 // CreateCollection creates a regular collection in a section from keys of one item type.
 func (c *Client) CreateCollection(ctx context.Context, machineID, sectionID, title string, typ int, keys []string) (string, error) {
 	cs := chunks(keys)
