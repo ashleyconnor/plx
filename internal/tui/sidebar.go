@@ -7,6 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/ashleyconnor/plx/internal/plan"
 )
 
 // The sidebar is the browse tree (Libraries, Playlists, Collections, Labels,
@@ -262,6 +264,14 @@ func (m *Model) sideKey(msg tea.KeyMsg) tea.Cmd {
 	case "x", ";":
 		if len(m.sel) > 0 {
 			return m.openMenu()
+		}
+	case "R":
+		if c := m.sideContainer(); c != nil {
+			return m.promptRename(c)
+		}
+	case "D":
+		if c := m.sideContainer(); c != nil {
+			return planCmd(plan.DeleteContainer(c))
 		}
 	case "esc":
 		if len(m.sel) > 0 {

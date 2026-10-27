@@ -414,6 +414,31 @@ func (m *Model) reorder() tea.Cmd {
 	return planCmd(p)
 }
 
+// --- playlists and collections ----------------------------------------------
+
+// sideContainer is the playlist or collection under the sidebar cursor.
+func (m *Model) sideContainer() *model.Container {
+	n := m.side.current()
+	if n == nil || !n.leaf() {
+		return nil
+	}
+	if c := n.view.container(); c != nil && (c.Kind == model.Playlist || c.Kind == model.Collection) {
+		return c
+	}
+	return nil
+}
+
+// promptRename asks for a new title for c, then previews the rename.
+func (m *Model) promptRename(c *model.Container) tea.Cmd {
+	m.prompt = &prompt{label: "rename " + c.Kind.String(), value: c.Title, submit: func(name string) tea.Cmd {
+		if name == "" || name == c.Title {
+			return nil
+		}
+		return planCmd(plan.Rename(c, name))
+	}}
+	return m.startPrompt()
+}
+
 // --- preview and execution ---------------------------------------------------
 
 // previewKey drives the Yes/No buttons under every preview. Deleting

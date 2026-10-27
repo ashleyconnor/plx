@@ -557,6 +557,9 @@ func (m *Model) hintsLine(v *view) string {
 	switch {
 	case m.focus == focusSide:
 		hs = []hint{{"↑↓", "move"}, {"→", "open"}, {"←", "collapse"}, {"tab", "next pane"}}
+		if m.sideContainer() != nil {
+			hs = append(hs, hint{"R", "rename"}, hint{"D", "delete"})
+		}
 		if len(m.sel) > 0 {
 			hs = append(hs, hint{"v", "view selected"}, hint{"x", "actions"})
 		}
@@ -687,7 +690,7 @@ func (m *Model) previewView() string {
 			}
 		}
 	}
-	if p.Destructive() {
+	if p.DeletesFiles() {
 		b.WriteString("\n" + stErr.Render("files that will be deleted:") + "\n")
 		const sample = 8
 		var files []string
@@ -724,8 +727,11 @@ func (m *Model) previewView() string {
 		b.WriteString(stDim.Render("can't apply · esc back"))
 	default:
 		question := "Apply these changes?"
-		if p.Destructive() {
+		switch {
+		case p.DeletesFiles():
 			question = "Delete these files?"
+		case p.Destructive():
+			question = "This can't be undone. Apply?"
 		}
 		b.WriteString(stBold.Render(question) + "\n\n" + confirmButtons(m.confirmYes, p.Destructive()) + "\n\n" +
 			renderHints([]hint{{"y", "yes"}, {"n", "no"}, {"←→", "choose"}, {"enter", "confirm"}, {"esc", "cancel"}}, w))
