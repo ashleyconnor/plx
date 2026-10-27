@@ -90,7 +90,7 @@ type Options struct {
 func Run(c *source.Catalog, opts Options) error {
 	SetIcons(opts.Icons)
 	m := newModel(c)
-	_, err := tea.NewProgram(m, tea.WithAltScreen()).Run()
+	_, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	return err
 }
 
@@ -269,6 +269,8 @@ func (m *Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		}
 		return m, m.key(msg)
+	case tea.MouseMsg:
+		return m, m.mouse(msg)
 	}
 	return m, nil
 }

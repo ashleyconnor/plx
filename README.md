@@ -108,6 +108,11 @@ sources), `space` select, `a` select all/none, `v` view selection, `/`
 filter, `s` sort, `f` folder lens, `x` or `;` actions (including delete from
 disk), `S` save query, `?` help.
 
+The mouse works too: click a source to show it (or a group to open or close
+it), click a row in the list to move the cursor there, and scroll either pane
+with the wheel. Because plx takes the mouse, select text with Shift-drag
+(Option-drag in iTerm2).
+
 Selection persists across views, so you can collect items from several places
 and act on all of them at once. Every action shows a preview first: what will
 change, what gets skipped and why, then **No (n)** / **Yes (y)** buttons
