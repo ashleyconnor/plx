@@ -23,7 +23,7 @@ var keyGroups = []keyGroup{
 		{"l → enter", "open, or item details"},
 		{"h ← ⌫", "back, or up a folder"},
 		{"tab ⇧tab", "next / previous pane"},
-		{"click wheel", "select / scroll"},
+		{"mouse", "click / scroll"},
 	}},
 	{"Select", [][2]string{
 		{"space", "select / unselect"},
