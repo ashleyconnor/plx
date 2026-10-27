@@ -25,6 +25,8 @@ const (
 	OpRemoveLabel
 	OpDelete
 	OpDeleteVersion
+	OpRename
+	OpDeleteContainer
 )
 
 // Op is one executable step. Which fields are used depends on Kind.
@@ -33,7 +35,7 @@ type Op struct {
 	Target *model.Container // container being changed (nil for creates and labels)
 	Items  []*model.Item
 
-	Title      string // creates
+	Title      string // creates, OpRename (the new title)
 	ListType   string // OpCreatePlaylist
 	SectionID  string // OpCreateCollection, labels
 	SearchType int    // OpCreateCollection, labels
@@ -69,6 +71,10 @@ func (o Op) Describe() string {
 		return fmt.Sprintf("delete %d items and their files from disk", n)
 	case OpDeleteVersion:
 		return fmt.Sprintf("delete %d versions and their files from disk", n)
+	case OpRename:
+		return fmt.Sprintf("rename %s to %q", o.Target, o.Title)
+	case OpDeleteContainer:
+		return fmt.Sprintf("delete %s (its items are kept)", o.Target)
 	}
 	return "?"
 }
@@ -120,6 +126,16 @@ func (p *Plan) skip(it *model.Item, format string, a ...any) {
 
 // Destructive reports whether applying the plan can't be undone.
 func (p *Plan) Destructive() bool {
+	for _, o := range p.Ops {
+		if o.Kind == OpDelete || o.Kind == OpDeleteVersion || o.Kind == OpDeleteContainer {
+			return true
+		}
+	}
+	return false
+}
+
+// DeletesFiles reports whether applying the plan removes files from disk.
+func (p *Plan) DeletesFiles() bool {
 	for _, o := range p.Ops {
 		if o.Kind == OpDelete || o.Kind == OpDeleteVersion {
 			return true
@@ -428,6 +444,47 @@ func NewCollectionFrom(src *model.Container, title string, items, srcMembers []*
 	rm := RemoveFrom(src, p.Ops[0].Items, srcMembers)
 	p.Ops = append(p.Ops, rm.Ops...)
 	p.Skipped = append(p.Skipped, rm.Skipped...)
+	return p
+}
+
+// --- containers --------------------------------------------------------------
+
+// editable blocks changes to anything but a playlist or collection. Smart
+// ones can be renamed and deleted too: only their contents are computed.
+func editable(p *Plan, c *model.Container) bool {
+	if c == nil || (c.Kind != model.Playlist && c.Kind != model.Collection) {
+		p.block("only playlists and collections can be renamed or deleted")
+		return false
+	}
+	return true
+}
+
+// Rename gives a playlist or collection a new title.
+func Rename(c *model.Container, title string) *Plan {
+	title = strings.TrimSpace(title)
+	p := &Plan{Title: fmt.Sprintf("Rename %s", c)}
+	if !editable(p, c) {
+		return p
+	}
+	switch {
+	case title == "":
+		p.block("%s needs a title", c.Kind)
+	case title == c.Title:
+		p.block("the title is unchanged")
+	default:
+		p.Ops = append(p.Ops, Op{Kind: OpRename, Target: c, Title: title})
+	}
+	return p
+}
+
+// DeleteContainer deletes a playlist or collection. Its items stay in the
+// library.
+func DeleteContainer(c *model.Container) *Plan {
+	p := &Plan{Title: fmt.Sprintf("Delete %s", c)}
+	if !editable(p, c) {
+		return p
+	}
+	p.Ops = append(p.Ops, Op{Kind: OpDeleteContainer, Target: c})
 	return p
 }
 

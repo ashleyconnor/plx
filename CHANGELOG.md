@@ -26,6 +26,8 @@ First release.
   of the selection.
 - Bulk actions: add to and remove from playlists and collections, move items
   between them, create new ones from the selection, add and remove labels.
+- Renaming and deleting playlists and collections from the sources sidebar
+  (`R` and `D`). Deleting one keeps its items and defaults to No.
 - Deleting items (all versions) or chosen versions from disk, including the
   samples of every selected item. Deleting versions never removes an item's
   last version or a file that another version uses.

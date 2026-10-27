@@ -281,3 +281,81 @@ func TestFailedExecutionReportsErrorAndKeepsSelection(t *testing.T) {
 		t.Error("a failed action must keep the selection so it can be retried")
 	}
 }
+
+// sideTo moves the sidebar cursor to the playlist named name.
+func sideTo(h *harness, name string) {
+	h.t.Helper()
+	h.drive(h.m.sideInit())
+	h.m.focus = focusSide
+	for i, n := range h.m.side.flat {
+		if n.name() == name && n.leaf() {
+			h.m.side.cursor = i
+			return
+		}
+	}
+	h.t.Fatalf("%s not in the sidebar", name)
+}
+
+func TestRenamePlaylistFromSidebar(t *testing.T) {
+	h := newHarness(t)
+	sideTo(h, "Alpha")
+	h.wantView("R rename", "D delete")
+	h.press("R")
+	h.wantMode(modePrompt)
+	if h.m.input.Value() != "Alpha" {
+		t.Errorf("prompt starts with %q", h.m.input.Value())
+	}
+	h.press("backspace", "backspace", "backspace", "backspace", "backspace", "Beta", "enter")
+	h.wantMode(modePreview)
+	h.wantView(`rename playlist "Alpha" to "Beta"`)
+	if !h.m.confirmYes {
+		t.Error("rename should start on Yes")
+	}
+	h.press("enter")
+	h.wantMode(modeNormal)
+	if got, want := h.sv.writes(), []string{"PUT /playlists/50"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("writes = %v, want %v", got, want)
+	}
+}
+
+func TestRenameUnchangedOrEsc(t *testing.T) {
+	h := newHarness(t)
+	sideTo(h, "Alpha")
+	h.press("R", "enter")
+	h.wantMode(modeNormal)
+	h.press("R", "esc")
+	h.wantMode(modeNormal)
+	if w := h.sv.writes(); len(w) != 0 {
+		t.Errorf("sent %v", w)
+	}
+}
+
+func TestDeletePlaylistDefaultsToNo(t *testing.T) {
+	h := newHarness(t)
+	sideTo(h, "Smart")
+	h.press("D")
+	h.wantMode(modePreview)
+	h.wantView(`delete playlist "Smart" (its items are kept)`, "can't be undone")
+	if h.m.confirmYes {
+		t.Error("deleting a playlist should start on No")
+	}
+	h.press("enter")
+	if w := h.sv.writes(); len(w) != 0 {
+		t.Errorf("enter on No sent %v", w)
+	}
+	h.press("D", "y")
+	if got, want := h.sv.writes(), []string{"DELETE /playlists/51"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("writes = %v, want %v", got, want)
+	}
+}
+
+func TestRenameAndDeleteIgnoredOnOtherSources(t *testing.T) {
+	h := newHarness(t)
+	sideTo(h, "Movies")
+	h.wantView()
+	if strings.Contains(h.view(), "R rename") {
+		t.Error("libraries can't be renamed")
+	}
+	h.press("R", "D")
+	h.wantMode(modeNormal)
+}

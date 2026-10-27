@@ -243,3 +243,41 @@ func TestDeleteNamesAllVersions(t *testing.T) {
 		t.Errorf("title = %q, want %q", p.Title, want)
 	}
 }
+
+func TestRenameContainer(t *testing.T) {
+	p := Rename(coll, "  Science fiction ")
+	if p.Blocked() || len(p.Ops) != 1 || p.Ops[0].Kind != OpRename || p.Ops[0].Title != "Science fiction" || p.Ops[0].Target != coll {
+		t.Fatalf("plan = %+v", p)
+	}
+	if p.Destructive() {
+		t.Error("rename is not destructive")
+	}
+	if Rename(smartPL, "Renamed").Blocked() {
+		t.Error("smart playlists can be renamed")
+	}
+	label := &model.Container{Kind: model.Label, ID: "keep", Title: "keep"}
+	for name, p := range map[string]*Plan{
+		"empty":     Rename(videoPL, "  "),
+		"unchanged": Rename(videoPL, "Watch"),
+		"label":     Rename(label, "other"),
+	} {
+		if !p.Blocked() || len(p.Ops) != 0 {
+			t.Errorf("%s: want blocked, got %+v", name, p)
+		}
+	}
+}
+
+func TestDeleteContainer(t *testing.T) {
+	for _, c := range []*model.Container{videoPL, smartPL, coll} {
+		p := DeleteContainer(c)
+		if p.Blocked() || len(p.Ops) != 1 || p.Ops[0].Kind != OpDeleteContainer {
+			t.Fatalf("%s: plan = %+v", c, p)
+		}
+		if !p.Destructive() || p.DeletesFiles() {
+			t.Errorf("%s: destructive %v, deletes files %v", c, p.Destructive(), p.DeletesFiles())
+		}
+	}
+	if p := DeleteContainer(&model.Container{Kind: model.Label, ID: "x"}); !p.Blocked() {
+		t.Error("labels can't be deleted as containers")
+	}
+}

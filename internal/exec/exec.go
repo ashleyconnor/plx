@@ -150,6 +150,30 @@ func (e *Executor) apply(ctx context.Context, op plan.Op, step func(string)) (st
 		err := e.C.SetCollectionSort(ctx, op.Target.ID, plex.CollectionSortCustom)
 		step(desc)
 		return "", err
+	case plan.OpRename:
+		var err error
+		switch op.Target.Kind {
+		case model.Playlist:
+			err = e.C.RenamePlaylist(ctx, op.Target.ID, op.Title)
+		case model.Collection:
+			err = e.C.RenameCollection(ctx, op.Target.SectionID, op.Target.ID, op.Title)
+		default:
+			err = fmt.Errorf("can't rename a %s", op.Target.Kind)
+		}
+		step(desc)
+		return "", err
+	case plan.OpDeleteContainer:
+		var err error
+		switch op.Target.Kind {
+		case model.Playlist:
+			err = e.C.DeletePlaylist(ctx, op.Target.ID)
+		case model.Collection:
+			err = e.C.DeleteCollection(ctx, op.Target.ID)
+		default:
+			err = fmt.Errorf("can't delete a %s", op.Target.Kind)
+		}
+		step(desc)
+		return "", err
 	case plan.OpAddLabel, plan.OpRemoveLabel:
 		ks := keys(op.Items)
 		for len(ks) > 0 {
