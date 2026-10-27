@@ -10,6 +10,8 @@ First release.
 
 ### Added
 
+- Mouse support: click a source or list row to select it, click a group to
+  open or close it, and scroll the sidebar or list with the wheel.
 - Terminal UI with three panes: sources (libraries, playlists, collections
   and labels by library, saved queries), the item list, and a details pane
   with full metadata, media versions, streams and a half-block poster.
