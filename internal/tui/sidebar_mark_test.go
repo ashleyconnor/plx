@@ -1,6 +1,14 @@
 package tui
 
-import "testing"
+import (
+	"fmt"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/ashleyconnor/plx/internal/model"
+	"github.com/ashleyconnor/plx/internal/plan"
+)
 
 func TestMarkModeToggle(t *testing.T) {
 	h := newHarness(t)
@@ -70,5 +78,61 @@ func TestKeysOutsideMarkMode(t *testing.T) {
 	h.press(" ")
 	if got := len(h.m.side.markedList()); got != 0 || h.m.side.marking {
 		t.Errorf("space marked %d outside mark mode", got)
+	}
+}
+
+func TestBulkDeleteMarked(t *testing.T) {
+	h := newHarness(t)
+	sideTo(h, "Alpha")
+	h.press("m", "a", "D")
+	h.wantMode(modePreview)
+	h.wantView("Delete 2 playlists", `delete playlist "Alpha"`, `delete playlist "Smart"`)
+	if h.m.confirmYes {
+		t.Error("bulk delete should default to No")
+	}
+	h.press("y")
+	h.wantMode(modeNormal)
+	if got, want := h.sv.writes(), []string{"DELETE /playlists/50", "DELETE /playlists/51"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("writes = %v, want %v", got, want)
+	}
+	if h.m.side.marking || len(h.m.side.markedList()) != 0 {
+		t.Error("a successful bulk delete should leave mark mode")
+	}
+}
+
+func TestBulkDeleteNothingMarked(t *testing.T) {
+	h := newHarness(t)
+	sideTo(h, "Alpha")
+	h.press("m", "D")
+	h.wantMode(modeNormal)
+	if !strings.Contains(h.m.status, "nothing marked") {
+		t.Errorf("status %q", h.m.status)
+	}
+	if w := h.sv.writes(); len(w) != 0 {
+		t.Errorf("sent %v", w)
+	}
+}
+
+func TestBulkDeleteFailureKeepsMarks(t *testing.T) {
+	h := newHarness(t)
+	h.sv.denyDelete = true
+	sideTo(h, "Alpha")
+	h.press("m", " ", "D", "y")
+	h.wantMode(modeNormal)
+	if !h.m.side.marking || len(h.m.side.markedList()) != 1 {
+		t.Errorf("marking=%v marks=%d, want mark mode kept with 1 mark", h.m.side.marking, len(h.m.side.markedList()))
+	}
+}
+
+func TestPreviewCapsLongOpList(t *testing.T) {
+	h := newHarness(t)
+	var cs []*model.Container
+	for i := 0; i < 30; i++ {
+		cs = append(cs, &model.Container{Kind: model.Collection, ID: fmt.Sprint(100 + i), Title: fmt.Sprintf("Coll %02d", i)})
+	}
+	h.m.preview, h.m.mode = plan.DeleteContainers(cs), modePreview
+	h.wantView("… and 15 more", "Yes (y)")
+	if strings.Contains(h.view(), "Coll 29") {
+		t.Error("ops past the cap should not be listed")
 	}
 }

@@ -26,6 +26,8 @@ First release.
   of the selection.
 - Bulk actions: add to and remove from playlists and collections, move items
   between them, create new ones from the selection, add and remove labels.
+- Mark mode in the sources sidebar (`m`): mark several playlists and
+  collections with `space` or `a`, then delete them all at once with `D`.
 - Renaming and deleting playlists and collections from the sources sidebar
   (`R` and `D`). Deleting one keeps its items and defaults to No.
 - Deleting items (all versions) or chosen versions from disk, including the

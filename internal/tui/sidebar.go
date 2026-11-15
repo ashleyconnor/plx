@@ -341,6 +341,14 @@ func (m *Model) sideKey(msg tea.KeyMsg) tea.Cmd {
 			return m.promptRename(c)
 		}
 	case "D":
+		if s.marking {
+			marked := s.markedList()
+			if len(marked) == 0 {
+				m.setStatus("nothing marked: space marks a playlist or collection", false)
+				return nil
+			}
+			return planCmd(plan.DeleteContainers(marked))
+		}
 		if c := m.sideContainer(); c != nil {
 			return planCmd(plan.DeleteContainer(c))
 		}

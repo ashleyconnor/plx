@@ -665,13 +665,22 @@ func (m *Model) previewView() string {
 	w := min(90, m.w-6)
 	var b strings.Builder
 	b.WriteString(stBold.Render(p.Title) + "\n\n")
-	moves := 0
+	moves, listed, more := 0, 0, 0
+	const maxOps = 15
 	for _, op := range p.Ops {
 		if op.Kind == plan.OpMove {
 			moves++
 			continue
 		}
+		if listed == maxOps {
+			more++
+			continue
+		}
+		listed++
 		b.WriteString("  • " + runewidth.Truncate(op.Describe(), w-4, "…") + "\n")
+	}
+	if more > 0 {
+		b.WriteString(stDim.Render(fmt.Sprintf("  … and %d more", more)) + "\n")
 	}
 	if moves > 0 {
 		b.WriteString(fmt.Sprintf("  • %s (only items out of place are moved)\n", plural(moves, "move")))
