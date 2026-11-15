@@ -556,10 +556,15 @@ func (m *Model) hintsLine(v *view) string {
 	var hs []hint
 	switch {
 	case m.focus == focusSide:
+		if m.side.marking {
+			hs = []hint{{"space", "mark"}, {"a", "all"}, {"D", "delete marked"}, {"esc", "done"}, {"↑↓", "move"}}
+			break
+		}
 		hs = []hint{{"↑↓", "move"}, {"→", "open"}, {"←", "collapse"}, {"tab", "next pane"}}
 		if m.sideContainer() != nil {
 			hs = append(hs, hint{"R", "rename"}, hint{"D", "delete"})
 		}
+		hs = append(hs, hint{"m", "mark"})
 		if len(m.sel) > 0 {
 			hs = append(hs, hint{"v", "view selected"}, hint{"x", "actions"})
 		}
