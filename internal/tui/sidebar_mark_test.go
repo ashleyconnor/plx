@@ -100,6 +100,24 @@ func TestBulkDeleteMarked(t *testing.T) {
 	}
 }
 
+func TestBulkDeleteMovesCursorToParent(t *testing.T) {
+	h := newHarness(t)
+	sideTo(h, "Alpha")
+	h.press("m", "a", "D")
+	h.sv.mu.Lock()
+	h.sv.hidePlaylists = map[string]bool{"50": true, "51": true} // gone after the delete
+	h.sv.mu.Unlock()
+	h.press("y")
+	h.wantMode(modeNormal)
+	if n := h.m.side.current(); n == nil || n.name() != "Playlists" {
+		name := "<nil>"
+		if n != nil {
+			name = n.name()
+		}
+		t.Errorf("cursor on %q, want the Playlists group the deleted rows were in", name)
+	}
+}
+
 func TestBulkDeleteNothingMarked(t *testing.T) {
 	h := newHarness(t)
 	sideTo(h, "Alpha")

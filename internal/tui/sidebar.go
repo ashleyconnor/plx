@@ -276,6 +276,9 @@ func (m *Model) sideLoaded(msg sideLoadedMsg) {
 	s := m.side
 	cur := s.current()
 	s.flatten()
+	for cur != nil && !s.contains(cur) { // e.g. the row was deleted: go to its group
+		cur = cur.parent
+	}
 	if cur != nil {
 		s.moveTo(cur)
 	}
