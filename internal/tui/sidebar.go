@@ -45,6 +45,7 @@ type sidebar struct {
 	marking   bool
 	marks     map[string]*model.Container
 	markOrder []string
+	markPlan  *plan.Plan // the bulk delete built from the marks, if one is pending
 }
 
 func markKey(c *model.Container) string { return c.Kind.String() + ":" + c.ID }
@@ -77,20 +78,47 @@ func (s *sidebar) markedList() []*model.Container {
 func (s *sidebar) exitMarking() {
 	s.marking = false
 	s.marks, s.markOrder = nil, nil
+	s.markPlan = nil
+}
+
+// pruneMarks drops the marks that group g lists but no longer has (deleted,
+// here or elsewhere), and points the rest at g's fresh containers.
+func (s *sidebar) pruneMarks(g *node) {
+	if len(s.marks) == 0 || g.view.lists == nil {
+		return
+	}
+	fresh := map[string]*model.Container{}
+	for _, ch := range g.children {
+		if c := nodeContainer(ch); c != nil {
+			fresh[markKey(c)] = c
+		}
+	}
+	s.markOrder = slices.DeleteFunc(s.markOrder, func(k string) bool {
+		if !g.view.lists(s.marks[k]) {
+			return false
+		}
+		if c, ok := fresh[k]; ok {
+			s.marks[k] = c
+			return false
+		}
+		delete(s.marks, k)
+		return true
+	})
 }
 
 // markAll marks every playlist/collection among the siblings of the cursor
 // (the children of the group under it), or unmarks them all if all are marked.
-func (s *sidebar) markAll() {
+// It reports whether there was anything to mark.
+func (s *sidebar) markAll() bool {
 	g := s.current()
 	if g == nil {
-		return
+		return false
 	}
 	if !g.group() {
 		g = g.parent
 	}
 	if g == nil {
-		return
+		return false
 	}
 	var cs []*model.Container
 	all := true
@@ -108,6 +136,7 @@ func (s *sidebar) markAll() {
 			s.toggleMark(c)
 		}
 	}
+	return len(cs) > 0
 }
 
 type sideLoadedMsg struct {
@@ -242,6 +271,7 @@ func (m *Model) sideLoaded(msg sideLoadedMsg) {
 			n.children = []*node{newNode(row{label: "(empty)"}, n)}
 		}
 		n.loaded = true
+		m.side.pruneMarks(n)
 	}
 	s := m.side
 	cur := s.current()
@@ -347,7 +377,8 @@ func (m *Model) sideKey(msg tea.KeyMsg) tea.Cmd {
 				m.setStatus("nothing marked: space marks a playlist or collection", false)
 				return nil
 			}
-			return planCmd(plan.DeleteContainers(marked))
+			s.markPlan = plan.DeleteContainers(marked)
+			return planCmd(s.markPlan)
 		}
 		if c := m.sideContainer(); c != nil {
 			return planCmd(plan.DeleteContainer(c))
@@ -366,8 +397,8 @@ func (m *Model) sideKey(msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 	case "a":
-		if s.marking {
-			s.markAll()
+		if s.marking && !s.markAll() {
+			m.setStatus("nothing to mark here", false)
 		}
 	case "esc":
 		if s.marking {

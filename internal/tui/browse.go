@@ -70,7 +70,8 @@ func containerDetail(c *model.Container) string {
 }
 
 func (m *Model) playlistsView() *view {
-	return &view{kind: dirView, title: "Playlists", loader: func(ctx context.Context) ([]row, error) {
+	lists := func(c *model.Container) bool { return c.Kind == model.Playlist }
+	return &view{kind: dirView, title: "Playlists", lists: lists, loader: func(ctx context.Context) ([]row, error) {
 		pls, err := m.cat.Playlists(ctx)
 		if err != nil {
 			return nil, err
@@ -100,7 +101,8 @@ func (m *Model) perSectionView(title, icon string, child func(source.Section) *v
 }
 
 func (m *Model) collectionsView(s source.Section) *view {
-	return &view{kind: dirView, title: s.Title, loader: func(ctx context.Context) ([]row, error) {
+	lists := func(c *model.Container) bool { return c.Kind == model.Collection && c.SectionID == s.ID }
+	return &view{kind: dirView, title: s.Title, lists: lists, loader: func(ctx context.Context) ([]row, error) {
 		cs, err := m.cat.Collections(ctx, s.ID)
 		if err != nil {
 			return nil, err

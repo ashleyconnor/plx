@@ -122,6 +122,67 @@ func TestBulkDeleteFailureKeepsMarks(t *testing.T) {
 	if !h.m.side.marking || len(h.m.side.markedList()) != 1 {
 		t.Errorf("marking=%v marks=%d, want mark mode kept with 1 mark", h.m.side.marking, len(h.m.side.markedList()))
 	}
+	if got, want := h.sv.writes(), []string{"DELETE /playlists/50"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("writes = %v, want %v", got, want)
+	}
+	if !strings.HasPrefix(h.m.status, "failed") {
+		t.Errorf("status %q, want a failure", h.m.status)
+	}
+}
+
+func TestMarksPrunedAfterReload(t *testing.T) {
+	h := newHarness(t)
+	sideTo(h, "Alpha")
+	h.press("m", " ", " ")
+	if got := len(h.m.side.markedList()); got != 2 {
+		t.Fatalf("marks = %d, want 2", got)
+	}
+	h.sv.mu.Lock()
+	h.sv.hidePlaylists = map[string]bool{"51": true} // Smart was deleted elsewhere
+	h.sv.mu.Unlock()
+	h.press("r")
+	h.drive(h.m.reloadSide())
+	marked := h.m.side.markedList()
+	if len(marked) != 1 || marked[0].Title != "Alpha" {
+		var titles []string
+		for _, c := range marked {
+			titles = append(titles, c.Title)
+		}
+		t.Errorf("marks = %v, want [Alpha]", titles)
+	}
+	h.wantView("MARK 1")
+}
+
+func TestOtherPlanKeepsMarks(t *testing.T) {
+	h := newHarness(t)
+	sideTo(h, "Alpha")
+	h.press("m", " ", "k", "R")
+	h.wantMode(modePrompt)
+	h.press("backspace", "backspace", "backspace", "backspace", "backspace", "Beta", "enter", "enter")
+	h.wantMode(modeNormal)
+	if got, want := h.sv.writes(), []string{"PUT /playlists/50"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("writes = %v, want %v", got, want)
+	}
+	if !h.m.side.marking || len(h.m.side.markedList()) != 1 {
+		t.Errorf("marking=%v marks=%d, want mark mode kept with 1 mark", h.m.side.marking, len(h.m.side.markedList()))
+	}
+}
+
+func TestMarkAllNothingMarkable(t *testing.T) {
+	h := newHarness(t)
+	sideTo(h, "Alpha")
+	for i, n := range h.m.side.flat {
+		if n.name() == "Libraries" && n.depth == 0 {
+			h.m.side.cursor = i
+		}
+	}
+	h.press("m", "a")
+	if h.m.status != "nothing to mark here" || h.m.statusErr {
+		t.Errorf("status %q (err %v)", h.m.status, h.m.statusErr)
+	}
+	if got := len(h.m.side.markedList()); got != 0 {
+		t.Errorf("marks = %d, want 0", got)
+	}
 }
 
 func TestPreviewCapsLongOpList(t *testing.T) {
@@ -131,7 +192,10 @@ func TestPreviewCapsLongOpList(t *testing.T) {
 		cs = append(cs, &model.Container{Kind: model.Collection, ID: fmt.Sprint(100 + i), Title: fmt.Sprintf("Coll %02d", i)})
 	}
 	h.m.preview, h.m.mode = plan.DeleteContainers(cs), modePreview
-	h.wantView("… and 15 more", "Yes (y)")
+	h.wantView("… and 15 more (15 collections)", "Yes (y)")
+	cs = append(cs[:20:20], &model.Container{Kind: model.Playlist, ID: "200", Title: "Play A"}, &model.Container{Kind: model.Playlist, ID: "201", Title: "Play B"})
+	h.m.preview = plan.DeleteContainers(cs)
+	h.wantView("… and 7 more (5 collections, 2 playlists)")
 	if strings.Contains(h.view(), "Coll 29") {
 		t.Error("ops past the cap should not be listed")
 	}

@@ -666,6 +666,7 @@ func (m *Model) previewView() string {
 	var b strings.Builder
 	b.WriteString(stBold.Render(p.Title) + "\n\n")
 	moves, listed, more := 0, 0, 0
+	hidden := map[model.ContainerKind]int{} // hidden container deletions, by kind
 	const maxOps = 15
 	for _, op := range p.Ops {
 		if op.Kind == plan.OpMove {
@@ -674,13 +675,27 @@ func (m *Model) previewView() string {
 		}
 		if listed == maxOps {
 			more++
+			if op.Kind == plan.OpDeleteContainer && op.Target != nil {
+				hidden[op.Target.Kind]++
+			}
 			continue
 		}
 		listed++
 		b.WriteString("  • " + runewidth.Truncate(op.Describe(), w-4, "…") + "\n")
 	}
 	if more > 0 {
-		b.WriteString(stDim.Render(fmt.Sprintf("  … and %d more", more)) + "\n")
+		line := fmt.Sprintf("  … and %d more", more)
+		if hidden[model.Collection]+hidden[model.Playlist] == more {
+			var kinds []string
+			if n := hidden[model.Collection]; n > 0 {
+				kinds = append(kinds, plural(n, "collection"))
+			}
+			if n := hidden[model.Playlist]; n > 0 {
+				kinds = append(kinds, plural(n, "playlist"))
+			}
+			line += " (" + strings.Join(kinds, ", ") + ")"
+		}
+		b.WriteString(stDim.Render(line) + "\n")
 	}
 	if moves > 0 {
 		b.WriteString(fmt.Sprintf("  • %s (only items out of place are moved)\n", plural(moves, "move")))

@@ -19,11 +19,12 @@ import (
 // server is a fake Plex that records every request. Movies (section 1) has
 // Alien (two versions) and Brazil; Alpha is a regular playlist, Smart a smart one.
 type server struct {
-	mu         sync.Mutex
-	reqs       []string // "METHOD /path"
-	allowDel   bool
-	denyDelete bool // answer DELETEs with 403
-	srv        *httptest.Server
+	mu            sync.Mutex
+	reqs          []string // "METHOD /path"
+	allowDel      bool
+	denyDelete    bool            // answer DELETEs with 403
+	hidePlaylists map[string]bool // ratingKeys left out of GET /playlists
+	srv           *httptest.Server
 }
 
 func (s *server) writes() []string {
@@ -56,7 +57,7 @@ func newServer(t *testing.T) *server {
 	s.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		s.reqs = append(s.reqs, r.Method+" "+r.URL.Path)
-		allow, deny := s.allowDel, s.denyDelete
+		allow, deny, hide := s.allowDel, s.denyDelete, s.hidePlaylists
 		s.mu.Unlock()
 		if deny && r.Method == "DELETE" {
 			w.WriteHeader(403)
@@ -82,9 +83,16 @@ func newServer(t *testing.T) *server {
 		case r.URL.Path == "/library/sections/1/label", r.URL.Path == "/library/sections/1/collections":
 			fmt.Fprint(w, `{"MediaContainer":{"Directory":[],"Metadata":[]}}`)
 		case r.URL.Path == "/playlists" && r.Method == "GET":
-			fmt.Fprint(w, `{"MediaContainer":{"Metadata":[
-				{"ratingKey":"50","title":"Alpha","playlistType":"video"},
-				{"ratingKey":"51","title":"Smart","playlistType":"video","smart":1}]}}`)
+			var pls []string
+			for _, p := range []struct{ key, json string }{
+				{"50", `{"ratingKey":"50","title":"Alpha","playlistType":"video"}`},
+				{"51", `{"ratingKey":"51","title":"Smart","playlistType":"video","smart":1}`},
+			} {
+				if !hide[p.key] {
+					pls = append(pls, p.json)
+				}
+			}
+			fmt.Fprintf(w, `{"MediaContainer":{"Metadata":[%s]}}`, strings.Join(pls, ","))
 		case r.URL.Path == "/playlists/50/items" && r.Method == "GET":
 			fmt.Fprint(w, `{"MediaContainer":{"Metadata":[{"ratingKey":"11","type":"movie","title":"Brazil","playlistItemID":"900"}]}}`)
 		case r.URL.Path == "/library/metadata/10":
