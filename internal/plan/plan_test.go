@@ -281,3 +281,38 @@ func TestDeleteContainer(t *testing.T) {
 		t.Error("labels can't be deleted as containers")
 	}
 }
+
+func TestDeleteContainers(t *testing.T) {
+	p := DeleteContainers([]*model.Container{videoPL, coll, smartPL, coll})
+	if p.Blocked() || len(p.Ops) != 3 {
+		t.Fatalf("plan = %+v", p)
+	}
+	for i, want := range []*model.Container{videoPL, coll, smartPL} {
+		if p.Ops[i].Kind != OpDeleteContainer || p.Ops[i].Target != want {
+			t.Errorf("op %d = %+v, want delete of %s", i, p.Ops[i], want)
+		}
+	}
+	if !p.Destructive() || p.DeletesFiles() {
+		t.Errorf("destructive %v, deletes files %v", p.Destructive(), p.DeletesFiles())
+	}
+	if p.Title != "Delete 3 playlists and collections" {
+		t.Errorf("title = %q", p.Title)
+	}
+	if got := DeleteContainers([]*model.Container{videoPL, smartPL}).Title; got != "Delete 2 playlists" {
+		t.Errorf("title = %q", got)
+	}
+	coll2 := &model.Container{Kind: model.Collection, ID: "other", Title: "Other"}
+	if got := DeleteContainers([]*model.Container{coll, coll2}).Title; got != "Delete 2 collections" {
+		t.Errorf("title = %q", got)
+	}
+	if got, want := DeleteContainers([]*model.Container{coll}).Title, DeleteContainer(coll).Title; got != want {
+		t.Errorf("single title = %q, want %q", got, want)
+	}
+	if p := DeleteContainers(nil); !p.Blocked() {
+		t.Error("nothing marked should block")
+	}
+	label := &model.Container{Kind: model.Label, ID: "x"}
+	if p := DeleteContainers([]*model.Container{videoPL, label}); !p.Blocked() {
+		t.Error("labels can't be deleted as containers")
+	}
+}

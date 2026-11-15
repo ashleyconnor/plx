@@ -488,6 +488,50 @@ func DeleteContainer(c *model.Container) *Plan {
 	return p
 }
 
+// DeleteContainers deletes several playlists and collections in one plan.
+// Duplicates (same kind and ID) are dropped, keeping the first. Their items
+// stay in the library.
+func DeleteContainers(cs []*model.Container) *Plan {
+	p := &Plan{Title: "Delete playlists and collections"}
+	var uniq []*model.Container
+	type key struct {
+		kind model.ContainerKind
+		id   string
+	}
+	seen := map[key]bool{}
+	for _, c := range cs {
+		if !editable(p, c) {
+			return p
+		}
+		k := key{c.Kind, c.ID}
+		if seen[k] {
+			continue
+		}
+		seen[k] = true
+		uniq = append(uniq, c)
+	}
+	switch len(uniq) {
+	case 0:
+		p.block("nothing marked")
+		return p
+	case 1:
+		return DeleteContainer(uniq[0])
+	}
+	title := fmt.Sprintf("Delete %d playlists and collections", len(uniq))
+	same := true
+	for _, c := range uniq {
+		same = same && c.Kind == uniq[0].Kind
+	}
+	if same {
+		title = fmt.Sprintf("Delete %d %ss", len(uniq), uniq[0].Kind)
+	}
+	p.Title = title
+	for _, c := range uniq {
+		p.Ops = append(p.Ops, Op{Kind: OpDeleteContainer, Target: c})
+	}
+	return p
+}
+
 // --- labels ------------------------------------------------------------------
 
 // Labels are per library and edited with one request per section and item
