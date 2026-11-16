@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"time"
@@ -8,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/ashleyconnor/plx/internal/model"
 	"github.com/ashleyconnor/plx/internal/plan"
 )
 
@@ -37,6 +39,104 @@ type sidebar struct {
 	flat           []*node // visible nodes, in order
 	cursor, offset int
 	active         *node // the source shown in the list pane
+
+	// Mark mode: pick several playlists/collections to act on together. Marks
+	// are keyed by markKey, not *node, so they survive a reload.
+	marking   bool
+	marks     map[string]*model.Container
+	markOrder []string
+	markPlan  *plan.Plan // the bulk delete built from the marks, if one is pending
+}
+
+func markKey(c *model.Container) string { return c.Kind.String() + ":" + c.ID }
+
+func (s *sidebar) marked(c *model.Container) bool { _, ok := s.marks[markKey(c)]; return ok }
+
+func (s *sidebar) toggleMark(c *model.Container) {
+	k := markKey(c)
+	if _, ok := s.marks[k]; ok {
+		delete(s.marks, k)
+		s.markOrder = slices.DeleteFunc(s.markOrder, func(o string) bool { return o == k })
+		return
+	}
+	if s.marks == nil {
+		s.marks = map[string]*model.Container{}
+	}
+	s.marks[k] = c
+	s.markOrder = append(s.markOrder, k)
+}
+
+// markedList is the marked containers, in the order they were marked.
+func (s *sidebar) markedList() []*model.Container {
+	var out []*model.Container
+	for _, k := range s.markOrder {
+		out = append(out, s.marks[k])
+	}
+	return out
+}
+
+func (s *sidebar) exitMarking() {
+	s.marking = false
+	s.marks, s.markOrder = nil, nil
+	s.markPlan = nil
+}
+
+// pruneMarks drops the marks that group g lists but no longer has (deleted,
+// here or elsewhere), and points the rest at g's fresh containers.
+func (s *sidebar) pruneMarks(g *node) {
+	if len(s.marks) == 0 || g.view.lists == nil {
+		return
+	}
+	fresh := map[string]*model.Container{}
+	for _, ch := range g.children {
+		if c := nodeContainer(ch); c != nil {
+			fresh[markKey(c)] = c
+		}
+	}
+	s.markOrder = slices.DeleteFunc(s.markOrder, func(k string) bool {
+		if !g.view.lists(s.marks[k]) {
+			return false
+		}
+		if c, ok := fresh[k]; ok {
+			s.marks[k] = c
+			return false
+		}
+		delete(s.marks, k)
+		return true
+	})
+}
+
+// markAll marks every playlist/collection among the siblings of the cursor
+// (the children of the group under it), or unmarks them all if all are marked.
+// It reports whether there was anything to mark.
+func (s *sidebar) markAll() bool {
+	g := s.current()
+	if g == nil {
+		return false
+	}
+	if !g.group() {
+		g = g.parent
+	}
+	if g == nil {
+		return false
+	}
+	var cs []*model.Container
+	all := true
+	for _, ch := range g.children {
+		if !ch.leaf() {
+			continue
+		}
+		if c := ch.view.container(); c != nil && (c.Kind == model.Playlist || c.Kind == model.Collection) {
+			cs = append(cs, c)
+			all = all && s.marked(c)
+		}
+	}
+	for _, c := range cs {
+		if s.marked(c) == all {
+			s.toggleMark(c)
+		}
+	}
+	return len(cs) > 0
 }
 
 type sideLoadedMsg struct {
@@ -171,10 +271,14 @@ func (m *Model) sideLoaded(msg sideLoadedMsg) {
 			n.children = []*node{newNode(row{label: "(empty)"}, n)}
 		}
 		n.loaded = true
+		m.side.pruneMarks(n)
 	}
 	s := m.side
 	cur := s.current()
 	s.flatten()
+	for cur != nil && !s.contains(cur) { // e.g. the row was deleted: go to its group
+		cur = cur.parent
+	}
 	if cur != nil {
 		s.moveTo(cur)
 	}
@@ -270,11 +374,39 @@ func (m *Model) sideKey(msg tea.KeyMsg) tea.Cmd {
 			return m.promptRename(c)
 		}
 	case "D":
+		if s.marking {
+			marked := s.markedList()
+			if len(marked) == 0 {
+				m.setStatus("nothing marked: space marks a playlist or collection", false)
+				return nil
+			}
+			s.markPlan = plan.DeleteContainers(marked)
+			return planCmd(s.markPlan)
+		}
 		if c := m.sideContainer(); c != nil {
 			return planCmd(plan.DeleteContainer(c))
 		}
+	case "m":
+		if s.marking {
+			s.exitMarking()
+		} else {
+			s.marking = true
+		}
+	case " ":
+		if s.marking {
+			if c := m.sideContainer(); c != nil {
+				s.toggleMark(c)
+				s.cursor++
+			}
+		}
+	case "a":
+		if s.marking && !s.markAll() {
+			m.setStatus("nothing to mark here", false)
+		}
 	case "esc":
-		if len(m.sel) > 0 {
+		if s.marking {
+			s.exitMarking()
+		} else if len(m.sel) > 0 {
 			m.clearSelection()
 		}
 	}
@@ -289,7 +421,11 @@ func (m *Model) sideKey(msg tea.KeyMsg) tea.Cmd {
 func (m *Model) sideView(w, h int) []string {
 	s := m.side
 	focused := m.focus == focusSide
-	lines := []string{paneTitle("SOURCES", w, focused)}
+	title := "SOURCES"
+	if s.marking {
+		title = fmt.Sprintf("SOURCES · MARK %d", len(s.marks))
+	}
+	lines := []string{paneTitle(title, w, focused)}
 	rows := h - 1
 	if s.cursor < s.offset {
 		s.offset = s.cursor
@@ -323,8 +459,12 @@ func (m *Model) sideRow(n *node, w int, cursor bool) string {
 	case n.err != nil:
 		badge = "!"
 	}
-	nameW := w - lipgloss.Width(prefix) - lipgloss.Width(badge) - 1
-	line := prefix + fit(n.name(), nameW) + " " + badge
+	tick := ""
+	if c := nodeContainer(n); c != nil && m.side.marked(c) {
+		tick = "✓ "
+	}
+	nameW := w - lipgloss.Width(prefix) - lipgloss.Width(tick) - lipgloss.Width(badge) - 1
+	line := prefix + tick + fit(n.name(), nameW) + " " + badge
 	if cursor {
 		return stCursor.Render(fit(stripANSI(line), w))
 	}
@@ -342,5 +482,19 @@ func (m *Model) sideRow(n *node, w int, cursor bool) string {
 	} else {
 		badge = stDim.Render(badge)
 	}
-	return prefix + name + " " + badge
+	if tick != "" {
+		tick = stKey.Render(tick)
+	}
+	return prefix + tick + name + " " + badge
+}
+
+// nodeContainer is the playlist or collection a sidebar leaf shows, or nil.
+func nodeContainer(n *node) *model.Container {
+	if !n.leaf() {
+		return nil
+	}
+	if c := n.view.container(); c != nil && (c.Kind == model.Playlist || c.Kind == model.Collection) {
+		return c
+	}
+	return nil
 }

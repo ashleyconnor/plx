@@ -41,6 +41,7 @@ type view struct {
 	title string
 
 	loader  func(ctx context.Context) ([]row, error)         // dir views
+	lists   func(c *model.Container) bool                    // dir views: whether c belongs among the entries
 	resolve func(ctx context.Context) (source.Source, error) // item views without a src yet
 	src     source.Source                                    // item views
 	columns []*field.Field

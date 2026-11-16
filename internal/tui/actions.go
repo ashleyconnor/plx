@@ -514,6 +514,9 @@ func (m *Model) finished(msg execDoneMsg) tea.Cmd {
 	} else {
 		m.setStatus("done: "+msg.plan.Title, false)
 		m.clearSelection()
+		if m.side.marking && msg.plan == m.side.markPlan {
+			m.side.exitMarking()
+		}
 	}
 	return m.invalidate()
 }

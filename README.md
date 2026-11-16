@@ -109,7 +109,8 @@ sources), `space` select, `a` select all/none, `v` view selection, `/`
 filter, `s` sort, `f` folder lens, `x` or `;` actions (including delete from
 disk), `S` save query, `?` help. In the sources sidebar, `R` renames and
 `D` deletes the playlist or collection under the cursor (its items stay in
-the library).
+the library). `m` starts mark mode: `space` marks, `a` marks or clears a
+whole group, and `D` deletes everything marked after a preview.
 
 The mouse works too: click a source to show it (or a group to open or close
 it), click a row in the list to move the cursor there, and scroll either pane
