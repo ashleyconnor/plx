@@ -6,7 +6,9 @@ All notable changes to plx are recorded here. The format follows
 
 ## [Unreleased]
 
-First release.
+## [0.2.0] - 2026-11-16
+
+The first published release.
 
 ### Added
 
@@ -57,3 +59,6 @@ First release.
   is reported.
 - Sizes and durations such as `size>inf` or `added<nan` are rejected with an
   error instead of silently matching the wrong items.
+
+[Unreleased]: https://github.com/ashleyconnor/plx/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ashleyconnor/plx/releases/tag/v0.2.0
