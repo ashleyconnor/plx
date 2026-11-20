@@ -16,9 +16,19 @@ import (
 // The log pane is a full-screen overlay (like help) listing every Plex
 // request with its decoded parameters and, for failures, the full response
 // body. logScroll < 0 means "follow the bottom".
+//
+// While it is open the app stops capturing the mouse, so the terminal's own
+// drag-to-select and copy work on the log text. Most terminals then turn the
+// wheel into ↑/↓ keys on the alternate screen, which scroll the pane.
 
-func (m *Model) openLog() {
+func (m *Model) openLog() tea.Cmd {
 	m.mode, m.logScroll = modeLog, -1
+	return tea.DisableMouse
+}
+
+func (m *Model) closeLog() tea.Cmd {
+	m.mode = modeNormal
+	return tea.EnableMouseCellMotion
 }
 
 // logText renders entries as plain text, one string per line, unwrapped.
@@ -96,7 +106,7 @@ func (m *Model) logView() string {
 	for len(shown) < h {
 		shown = append(shown, "")
 	}
-	footer := renderHints([]hint{{"j/k", "scroll"}, {"g/G", "top / bottom"}, {"w", "save to file"}, {"esc", "close"}}, m.w)
+	footer := renderHints([]hint{{"j/k", "scroll"}, {"g/G", "top / bottom"}, {"drag", "select text"}, {"w", "save to file"}, {"esc", "close"}}, m.w)
 	return title + "\n" + strings.Join(shown, "\n") + "\n" + footer
 }
 
@@ -120,28 +130,16 @@ func (m *Model) logKey(msg tea.KeyMsg) tea.Cmd {
 		m.logScroll = -1
 	case "w":
 		path, err := m.saveLog()
-		m.mode = modeNormal
 		if err != nil {
 			m.setStatus("saving log: "+err.Error(), true)
 		} else {
 			m.setStatus("log saved to "+path, false)
 		}
+		return m.closeLog()
 	default:
-		m.mode = modeNormal
+		return m.closeLog()
 	}
 	return nil
-}
-
-func (m *Model) logWheel(msg tea.MouseMsg) {
-	if m.logScroll < 0 {
-		m.logScroll = max(0, len(m.logLines())-max(1, m.h-2))
-	}
-	switch msg.Button {
-	case tea.MouseButtonWheelUp:
-		m.logScroll = max(0, m.logScroll-wheelStep)
-	case tea.MouseButtonWheelDown:
-		m.logScroll += wheelStep
-	}
 }
 
 // saveLog writes the whole log, unwrapped, to a file in the temp directory

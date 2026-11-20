@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -21,9 +22,20 @@ func TestLogPane(t *testing.T) {
 	// The long body line wraps instead of being cut off.
 	h.wantView("✗ PUT /library/sections/1/all → 400 Bad Request", "response:", strings.Repeat("y", 100), "✗ failed: plex: PUT")
 
-	h.send(tea.MouseMsg{Action: tea.MouseActionPress, Button: tea.MouseButtonWheelUp})
 	h.press("esc")
 	h.wantMode(modeNormal)
+}
+
+// The log pane hands the mouse back to the terminal so its text can be
+// selected, and takes it again on close.
+func TestLogPaneReleasesMouse(t *testing.T) {
+	h := newHarness(t)
+	if msg := h.m.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("L")})(); fmt.Sprintf("%T", msg) != fmt.Sprintf("%T", tea.DisableMouse()) {
+		t.Errorf("opening the log returned %T, want DisableMouse", msg)
+	}
+	if msg := h.m.key(tea.KeyMsg{Type: tea.KeyEsc})(); fmt.Sprintf("%T", msg) != fmt.Sprintf("%T", tea.EnableMouseCellMotion()) {
+		t.Errorf("closing the log returned %T, want EnableMouseCellMotion", msg)
+	}
 }
 
 func TestLogPaneFollowsAndScrolls(t *testing.T) {

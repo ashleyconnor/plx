@@ -32,10 +32,6 @@ func (m *Model) paneAt(x, y int) (f focus, row int, ok bool) {
 // mouse handles clicks and the wheel in the sidebar and list panes. Other
 // modes draw over them, so they ignore the mouse.
 func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
-	if m.mode == modeLog && msg.Action == tea.MouseActionPress {
-		m.logWheel(msg)
-		return nil
-	}
 	if m.mode != modeNormal || msg.Action != tea.MouseActionPress {
 		return nil
 	}

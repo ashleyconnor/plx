@@ -325,8 +325,7 @@ func (m *Model) normalKey(msg tea.KeyMsg) tea.Cmd {
 		m.mode = modeHelp
 		return nil
 	case "L":
-		m.openLog()
-		return nil
+		return m.openLog()
 	case "tab":
 		return m.cycleFocus(1)
 	case "shift+tab":
