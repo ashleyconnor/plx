@@ -15,6 +15,7 @@ import (
 
 	"github.com/ashleyconnor/plx/internal/exec"
 	"github.com/ashleyconnor/plx/internal/field"
+	"github.com/ashleyconnor/plx/internal/logbuf"
 	"github.com/ashleyconnor/plx/internal/model"
 	"github.com/ashleyconnor/plx/internal/plan"
 	"github.com/ashleyconnor/plx/internal/query"
@@ -34,6 +35,7 @@ const (
 	modeRunning
 	modeHelp
 	modeInfo
+	modeLog
 )
 
 // focus is the pane that takes keys.
@@ -73,6 +75,8 @@ type Model struct {
 	compSel int              // highlighted suggestion; -1 until ↑/↓ is used
 
 	helpScroll int
+	log        *logbuf.Buffer
+	logScroll  int // first shown line of the log pane; -1 follows the bottom
 	picker     *picker
 	prompt     *prompt
 	preview    *plan.Plan
@@ -84,12 +88,16 @@ type Model struct {
 }
 
 type Options struct {
-	Icons string // "emoji" (default), "ascii" or "none"
+	Icons string         // "emoji" (default), "ascii" or "none"
+	Log   *logbuf.Buffer // shown in the log pane (L); errors are added to it
 }
 
 func Run(c *source.Catalog, opts Options) error {
 	SetIcons(opts.Icons)
 	m := newModel(c)
+	if opts.Log != nil {
+		m.log = opts.Log
+	}
 	_, err := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run()
 	return err
 }
@@ -99,7 +107,7 @@ func newModel(c *source.Catalog) *Model {
 	in.Prompt = ""
 	sp := spinner.New()
 	sp.Spinner = spinner.MiniDot
-	m := &Model{cat: c, ctx: context.Background(), input: in, sel: map[string]*model.Item{}, infos: map[string]*info{}, spinner: sp, w: 100, h: 30}
+	m := &Model{cat: c, ctx: context.Background(), input: in, sel: map[string]*model.Item{}, infos: map[string]*info{}, spinner: sp, w: 100, h: 30, log: logbuf.New(0)}
 	m.side = m.newSidebar()
 	m.stack = []*view{emptyView()}
 	return m
@@ -168,6 +176,9 @@ const statusTTL = 6 * time.Second
 
 func (m *Model) setStatus(text string, isErr bool) {
 	m.status, m.statusErr, m.statusAt = text, isErr, time.Now()
+	if isErr {
+		m.log.Errorf("%s", text)
+	}
 }
 
 // --- update ------------------------------------------------------------------
@@ -295,6 +306,8 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 		return m.helpKey(msg)
 	case modeInfo:
 		return m.infoKey(msg)
+	case modeLog:
+		return m.logKey(msg)
 	}
 	return m.normalKey(msg)
 }
@@ -311,6 +324,8 @@ func (m *Model) normalKey(msg tea.KeyMsg) tea.Cmd {
 	case "?":
 		m.mode = modeHelp
 		return nil
+	case "L":
+		return m.openLog()
 	case "tab":
 		return m.cycleFocus(1)
 	case "shift+tab":

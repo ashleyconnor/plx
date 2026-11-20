@@ -54,18 +54,29 @@ func (e *Executor) Run(ctx context.Context, p *plan.Plan, progress func(Progress
 			progress(Progress{Done: done, Total: total, Step: desc})
 		}
 	}
-	for _, op := range p.Ops {
+	for i, op := range p.Ops {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		created, err := e.apply(ctx, op, step)
 		e.log(op, created, err)
 		if err != nil {
-			return fmt.Errorf("%s: %w", op.Describe(), err)
+			return &OpError{Op: op, Index: i, Err: err}
 		}
 	}
 	return nil
 }
+
+// OpError is Run's error when an op fails. Index is the op's position in
+// the plan: ops before it were applied, ops after it were not.
+type OpError struct {
+	Op    plan.Op
+	Index int
+	Err   error
+}
+
+func (e *OpError) Error() string { return e.Op.Describe() + ": " + e.Err.Error() }
+func (e *OpError) Unwrap() error { return e.Err }
 
 func keys(items []*model.Item) []string {
 	ks := make([]string, len(items))

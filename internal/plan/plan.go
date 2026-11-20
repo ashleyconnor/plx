@@ -488,6 +488,43 @@ func DeleteContainer(c *model.Container) *Plan {
 	return p
 }
 
+// RecreateCollection replaces a collection that Plex refuses to add to with
+// a new, same-named one holding items, then runs rest: the ops that were
+// waiting on the failed add. Plex can leave an emptied collection in this
+// state after every item in it was deleted from the library. Ops in rest
+// that target the old collection are dropped, since it will be gone.
+func RecreateCollection(c *model.Container, items []*model.Item, rest []Op) *Plan {
+	p := &Plan{Title: fmt.Sprintf("Recreate %s", c)}
+	if c.Kind != model.Collection {
+		p.block("%s is not a collection", c)
+		return p
+	}
+	if !editable(p, c) {
+		return p
+	}
+	items = dedupe(items)
+	if len(items) == 0 {
+		p.block("no items")
+		return p
+	}
+	typ := c.Subtype.SearchType()
+	if typ == 0 {
+		typ = items[0].Kind.SearchType()
+	}
+	p.warn("Items can't be added to an empty collection, so it must be recreated.")
+	p.Ops = append(p.Ops,
+		Op{Kind: OpDeleteContainer, Target: c},
+		Op{Kind: OpCreateCollection, Title: c.Title, SectionID: c.SectionID, SearchType: typ, Items: items})
+	for _, o := range rest {
+		if o.Target != nil && o.Target.Kind == c.Kind && o.Target.ID == c.ID {
+			p.warn("skipped: %s", o.Describe())
+			continue
+		}
+		p.Ops = append(p.Ops, o)
+	}
+	return p
+}
+
 // DeleteContainers deletes several playlists and collections in one plan.
 // Duplicates (same kind and ID) are dropped, keeping the first. Their items
 // stay in the library.

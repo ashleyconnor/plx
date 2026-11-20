@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/ashleyconnor/plx/internal/logbuf"
 )
 
 const pageSize = 1000
@@ -19,12 +21,14 @@ type Client struct {
 	token    string
 	clientID string
 	hc       *http.Client
+	log      *logbuf.Buffer
 }
 
 type Options struct {
 	Insecure bool // skip TLS verification (self-signed / plex.direct certs)
 	Timeout  time.Duration
-	ClientID string // X-Plex-Client-Identifier; default "plx"
+	ClientID string         // X-Plex-Client-Identifier; default "plx"
+	Log      *logbuf.Buffer // every request is recorded here when set
 }
 
 // New builds a client. baseURL may omit the scheme, in which case https is used.
@@ -45,6 +49,7 @@ func New(baseURL, token string, opts Options) *Client {
 		token:    token,
 		clientID: opts.ClientID,
 		hc:       &http.Client{Timeout: opts.Timeout, Transport: tr},
+		log:      opts.Log,
 	}
 }
 
@@ -89,15 +94,35 @@ type APIError struct {
 	Body         string
 }
 
+// maxErrBody caps how much of an error response is kept for the log.
+const maxErrBody = 64 << 10
+
 func (e *APIError) Error() string {
-	return fmt.Sprintf("plex: %s %s: %d %s", e.Method, e.Path, e.Status, strings.TrimSpace(e.Body))
+	body := strings.Join(strings.Fields(e.Body), " ")
+	if len(body) > 300 {
+		body = body[:300] + "…"
+	}
+	return fmt.Sprintf("plex: %s %s: %d %s", e.Method, e.Path, e.Status, body)
 }
 
-func (c *Client) do(ctx context.Context, method, path string, p Params, out any) error {
+func (c *Client) do(ctx context.Context, method, path string, p Params, out any) (err error) {
 	req, err := http.NewRequestWithContext(ctx, method, c.base+path+p.Encode(), nil)
 	if err != nil {
 		return err
 	}
+	if c.log != nil {
+		start := time.Now()
+		var status int
+		var errBody string
+		defer func() { c.logRequest(method, path, p, start, status, errBody, err) }()
+		return c.send(req, method, path, out, &status, &errBody)
+	}
+	return c.send(req, method, path, out, nil, nil)
+}
+
+// send performs req, reporting the status and any error body through the
+// optional pointers so do can log them.
+func (c *Client) send(req *http.Request, method, path string, out any, status *int, errBody *string) error {
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-Plex-Token", c.token)
 	req.Header.Set("X-Plex-Client-Identifier", c.clientID)
@@ -107,8 +132,14 @@ func (c *Client) do(ctx context.Context, method, path string, p Params, out any)
 		return err
 	}
 	defer resp.Body.Close()
+	if status != nil {
+		*status = resp.StatusCode
+	}
 	if resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
+		if errBody != nil {
+			*errBody = string(body)
+		}
 		return &APIError{Method: method, Path: path, Status: resp.StatusCode, Body: string(body)}
 	}
 	if out == nil {
@@ -190,4 +221,39 @@ func (c *Client) paged(ctx context.Context, path string, p Params) (*MediaContai
 			return all, nil
 		}
 	}
+}
+
+// logRequest records one request. Parameters are listed decoded, one per
+// line, since Plex edit URLs are long and mostly percent-escapes. The token
+// travels in a header, so nothing secret is logged.
+func (c *Client) logRequest(method, path string, p Params, start time.Time, status int, errBody string, err error) {
+	e := logbuf.Entry{Time: start}
+	dur := time.Since(start).Round(time.Millisecond)
+	switch {
+	case status != 0:
+		e.Summary = fmt.Sprintf("%s %s → %d %s (%s)", method, path, status, http.StatusText(status), dur)
+	default:
+		e.Summary = fmt.Sprintf("%s %s → failed (%s)", method, path, dur)
+	}
+	if err != nil {
+		e.Level = logbuf.Error
+	}
+	for _, kv := range p {
+		e.Detail = append(e.Detail, kv.k+" = "+kv.v)
+	}
+	if err != nil {
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) {
+			e.Detail = append(e.Detail, "error: "+err.Error())
+		}
+	}
+	if b := strings.TrimSpace(errBody); b != "" {
+		e.Detail = append(e.Detail, "response:")
+		for _, l := range strings.Split(b, "\n") {
+			e.Detail = append(e.Detail, "  "+l)
+		}
+	} else if status >= 300 {
+		e.Detail = append(e.Detail, "response: (empty body)")
+	}
+	c.log.Add(e)
 }

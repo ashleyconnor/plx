@@ -95,6 +95,8 @@ func newServer(t *testing.T) *server {
 			fmt.Fprintf(w, `{"MediaContainer":{"Metadata":[%s]}}`, strings.Join(pls, ","))
 		case r.URL.Path == "/playlists/50/items" && r.Method == "GET":
 			fmt.Fprint(w, `{"MediaContainer":{"Metadata":[{"ratingKey":"11","type":"movie","title":"Brazil","playlistItemID":"900"}]}}`)
+		case r.URL.Path == "/library/collections/71/children":
+			fmt.Fprint(w, `{"MediaContainer":{"Metadata":[{"ratingKey":"10","type":"movie","title":"Alien"}]}}`)
 		case r.URL.Path == "/library/metadata/10":
 			fmt.Fprint(w, `{"MediaContainer":{"Metadata":[{"ratingKey":"10","type":"movie","title":"Alien","summary":"In space no one can hear you scream."}]}}`)
 		}
