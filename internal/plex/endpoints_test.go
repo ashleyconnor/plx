@@ -98,7 +98,7 @@ func TestEveryRequestIdentifiesPlx(t *testing.T) {
 	}
 }
 
-func TestAPIErrorCarriesStatusAndTruncatedBody(t *testing.T) {
+func TestAPIErrorCarriesStatusAndFullBody(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(401)
 		fmt.Fprint(w, strings.Repeat("x", 2000))
@@ -106,11 +106,11 @@ func TestAPIErrorCarriesStatusAndTruncatedBody(t *testing.T) {
 	defer srv.Close()
 	_, err := New(srv.URL, "bad", Options{}).Identity(bg)
 	var ae *APIError
-	if !errors.As(err, &ae) || ae.Status != 401 || ae.Method != "GET" || ae.Path != "/identity" || len(ae.Body) != 512 {
+	if !errors.As(err, &ae) || ae.Status != 401 || ae.Method != "GET" || ae.Path != "/identity" || len(ae.Body) != 2000 {
 		t.Fatalf("err = %v (%+v)", err, ae)
 	}
-	if !strings.HasPrefix(err.Error(), "plex: GET /identity: 401 xxx") {
-		t.Errorf("message = %.60s", err.Error())
+	if !strings.HasPrefix(err.Error(), "plex: GET /identity: 401 xxx") || len(err.Error()) > 400 {
+		t.Errorf("message = %.60s (%d chars)", err.Error(), len(err.Error()))
 	}
 }
 

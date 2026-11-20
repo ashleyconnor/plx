@@ -107,7 +107,7 @@ sidebar.
 Keys: `j/k` move, `l/h` open/back (`h` at the top of a list returns to the
 sources), `space` select, `a` select all/none, `v` view selection, `/`
 filter, `s` sort, `f` folder lens, `x` or `;` actions (including delete from
-disk), `S` save query, `?` help. In the sources sidebar, `R` renames and
+disk), `S` save query, `L` request log, `?` help. In the sources sidebar, `R` renames and
 `D` deletes the playlist or collection under the cursor (its items stay in
 the library). `m` starts mark mode: `space` marks, `a` marks or clears a
 whole group, and `D` deletes everything marked after a preview.

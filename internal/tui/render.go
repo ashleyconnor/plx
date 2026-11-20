@@ -130,6 +130,8 @@ func (m *Model) View() string {
 	switch m.mode {
 	case modeHelp:
 		return m.helpView()
+	case modeLog:
+		return m.logView()
 	case modeMenu:
 		return m.overlay(m.menuView())
 	case modePicker:
@@ -523,7 +525,7 @@ func (m *Model) messageLine() string {
 		return ""
 	}
 	if m.statusErr {
-		return stErr.Render(runewidth.Truncate("✗ "+m.status, m.w, "…"))
+		return stErr.Render(runewidth.Truncate("✗ "+m.status, m.w-9, "…")) + stDim.Render("  L: log")
 	}
 	return stOK.Render(runewidth.Truncate("✓ "+m.status, m.w, "…"))
 }

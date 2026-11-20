@@ -6,6 +6,17 @@ All notable changes to plx are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A request log pane (`L`): every Plex request with its decoded parameters,
+  and the full response body of any that fail. Errors shown in the status
+  line are added too, and `w` saves the log to a file in the temp directory.
+
+### Changed
+
+- Plex error responses are no longer cut to 512 bytes; the status line shows
+  a short form and the log pane shows the rest.
+
 ## [0.2.0] - 2026-11-16
 
 The first published release.

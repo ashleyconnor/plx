@@ -46,6 +46,7 @@ var keyGroups = []keyGroup{
 		{"S", "save as query"},
 		{"R D", "rename / delete"},
 		{"m", "mark sources"},
+		{"L", "request log"},
 		{"?", "help"},
 		{"q", "quit"},
 	}},

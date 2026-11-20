@@ -16,6 +16,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/ashleyconnor/plx/internal/field"
+	"github.com/ashleyconnor/plx/internal/logbuf"
 	"github.com/ashleyconnor/plx/internal/plex"
 	"github.com/ashleyconnor/plx/internal/query"
 	"github.com/ashleyconnor/plx/internal/source"
@@ -47,10 +48,11 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	cat := source.NewCatalog(plex.New(cfg.URL, cfg.Token, plex.Options{Insecure: cfg.Insecure, ClientID: cfg.ClientID}))
+	log := logbuf.New(1000)
+	cat := source.NewCatalog(plex.New(cfg.URL, cfg.Token, plex.Options{Insecure: cfg.Insecure, ClientID: cfg.ClientID, Log: log}))
 
 	if len(args) == 0 {
-		return tui.Run(cat, tui.Options{Icons: cfg.Icons})
+		return tui.Run(cat, tui.Options{Icons: cfg.Icons, Log: log})
 	}
 	switch args[0] {
 	case "ls":
