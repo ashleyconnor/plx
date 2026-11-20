@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -176,6 +177,14 @@ func TestRunStopsAtFirstFailureAndWrapsDescription(t *testing.T) {
 	)
 	if err == nil || !strings.Contains(err.Error(), "delete 3 items") || !strings.Contains(err.Error(), "403") {
 		t.Fatalf("err = %v", err)
+	}
+	var opErr *exec.OpError
+	var apiErr *plex.APIError
+	if !errors.As(err, &opErr) || opErr.Index != 0 || opErr.Op.Kind != plan.OpDelete {
+		t.Errorf("err = %#v, want an OpError for op 0", err)
+	}
+	if !errors.As(err, &apiErr) || apiErr.Status != 403 {
+		t.Errorf("OpError should unwrap to the APIError, got %v", err)
 	}
 	got := rec.all()
 	if len(got) != 2 { // item 3 and the later op must never be sent

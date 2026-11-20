@@ -11,6 +11,10 @@ All notable changes to plx are recorded here. The format follows
 - A request log pane (`L`): every Plex request with its decoded parameters,
   and the full response body of any that fail. Errors shown in the status
   line are added too, and `w` saves the log to a file in the temp directory.
+  While the pane is open plx releases the mouse, so the terminal's own
+  drag-to-select and copy work on the log text.
+- Adding items to an empty collection that Plex rejects now asks whether to
+  recreate the collection with those items. No cancels.
 
 ### Changed
 

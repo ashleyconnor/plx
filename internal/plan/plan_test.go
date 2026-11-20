@@ -316,3 +316,42 @@ func TestDeleteContainers(t *testing.T) {
 		t.Error("labels can't be deleted as containers")
 	}
 }
+
+func TestRecreateCollection(t *testing.T) {
+	a, b := movie("1", "1"), movie("2", "1")
+	later := Op{Kind: OpRemove, Target: videoPL, Items: []*model.Item{member(a, "9")}}
+	onOld := Op{Kind: OpSetCollectionSortCustom, Target: coll}
+	p := RecreateCollection(coll, []*model.Item{a, b, a}, []Op{later, onOld})
+	if p.Blocked() {
+		t.Fatalf("blocked: %+v", p.Violations)
+	}
+	if !p.Destructive() {
+		t.Error("deleting the old collection should make the plan destructive (default No)")
+	}
+	if len(p.Ops) != 3 {
+		t.Fatalf("ops = %v", p.Ops)
+	}
+	if o := p.Ops[0]; o.Kind != OpDeleteContainer || o.Target != coll {
+		t.Errorf("op 0 = %s", o.Describe())
+	}
+	if o := p.Ops[1]; o.Kind != OpCreateCollection || o.Title != "Sci-fi" || o.SectionID != "1" || o.SearchType != 1 || len(o.Items) != 2 {
+		t.Errorf("op 1 = %+v", o)
+	}
+	if p.Ops[2].Kind != OpRemove {
+		t.Errorf("op 2 = %s, want the remaining remove", p.Ops[2].Describe())
+	}
+	var dropped bool
+	for _, v := range p.Violations {
+		dropped = dropped || strings.Contains(v.Message, "skipped: set")
+	}
+	if !dropped {
+		t.Errorf("the sort op on the old collection should be dropped with a note: %+v", p.Violations)
+	}
+
+	if RecreateCollection(smartPL, []*model.Item{a}, nil).Blocked() == false {
+		t.Error("a playlist can't be recreated as a collection")
+	}
+	if RecreateCollection(coll, nil, nil).Blocked() == false {
+		t.Error("no items should block")
+	}
+}

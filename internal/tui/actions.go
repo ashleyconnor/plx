@@ -2,8 +2,10 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/ashleyconnor/plx/internal/field"
+	"net/http"
 	"path"
 	"path/filepath"
 	"sort"
@@ -15,6 +17,7 @@ import (
 	"github.com/ashleyconnor/plx/internal/exec"
 	"github.com/ashleyconnor/plx/internal/model"
 	"github.com/ashleyconnor/plx/internal/plan"
+	"github.com/ashleyconnor/plx/internal/plex"
 	"github.com/ashleyconnor/plx/internal/query"
 	"github.com/ashleyconnor/plx/internal/source"
 	"github.com/ashleyconnor/plx/internal/store"
@@ -511,6 +514,9 @@ func (m *Model) finished(msg execDoneMsg) tea.Cmd {
 	m.mode = modeNormal
 	if msg.err != nil {
 		m.setStatus("failed: "+msg.err.Error()+" (completed steps were kept; see actions.log)", true)
+		if offer := m.offerRecreate(msg); offer != nil {
+			return tea.Batch(m.invalidate(), offer)
+		}
 	} else {
 		m.setStatus("done: "+msg.plan.Title, false)
 		m.clearSelection()
@@ -519,6 +525,33 @@ func (m *Model) finished(msg execDoneMsg) tea.Cmd {
 		}
 	}
 	return m.invalidate()
+}
+
+// offerRecreate handles an add to a collection that Plex rejected with 400
+// Bad Request. If the collection is empty it is most likely broken (Plex
+// leaves collections like that once all their items were deleted from
+// disk), so this previews deleting it and creating a new one of the same
+// name with the items, followed by whatever the failed plan had left. The
+// preview is destructive, so it defaults to No.
+func (m *Model) offerRecreate(msg execDoneMsg) tea.Cmd {
+	var opErr *exec.OpError
+	var apiErr *plex.APIError
+	if !errors.As(msg.err, &opErr) || !errors.As(msg.err, &apiErr) || apiErr.Status != http.StatusBadRequest {
+		return nil
+	}
+	op := opErr.Op
+	if op.Kind != plan.OpAdd || op.Target == nil || op.Target.Kind != model.Collection {
+		return nil
+	}
+	dst, rest := op.Target, msg.plan.Ops[opErr.Index+1:]
+	return func() tea.Msg {
+		m.cat.Invalidate(source.Members{C: dst}.ID())
+		members, err := m.members(dst)
+		if err != nil || len(members) > 0 {
+			return nil
+		}
+		return planMsg{plan: plan.RecreateCollection(dst, op.Items, rest)}
+	}
 }
 
 // --- prompt ------------------------------------------------------------------
